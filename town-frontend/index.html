@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>反作弊监控系统</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0e17; color: #e0e6f0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+    * { scrollbar-width: thin; scrollbar-color: rgba(69, 231, 150, 0.3) transparent; }
+
+    #canvas-container { position: fixed; inset: 0; z-index: 0; }
+    canvas { display: block; width: 100%; height: 100%; }
+
+    #ui-overlay { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
+    #ui-overlay > * { pointer-events: auto; }
+
+    /* Glassmorphism base — agentshire town-panel style */
+    .glass-panel {
+      background: rgba(10, 10, 18, 0.96);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+      transition: border-color 0.3s;
+    }
+
+    /* Alert panel - left side, collapsible */
+    #alert-panel {
+      position: absolute; top: 16px; left: 16px; width: 360px; max-height: calc(100vh - 32px);
+      display: flex; flex-direction: column; overflow: hidden;
+      transition: width 0.3s ease, border-radius 0.3s ease;
+    }
+    #alert-panel.collapsed {
+      width: 48px; cursor: pointer; border-radius: 14px;
+    }
+    #alert-panel.collapsed .panel-controls,
+    #alert-panel.collapsed #alert-filters,
+    #alert-panel.collapsed #alert-list { display: none; }
+    #alert-panel.collapsed .panel-header {
+      flex-direction: column; align-items: center; justify-content: center;
+      padding: 12px 0; gap: 4px; border-bottom: none;
+    }
+    #alert-panel.collapsed .panel-header .collapse-icon { display: none; }
+    #alert-panel.collapsed .panel-header .alert-count {
+      font-size: 14px; padding: 2px 6px;
+    }
+    #alert-panel.flash-border {
+      border-color: rgba(255, 70, 70, 0.6);
+      box-shadow: 0 0 20px rgba(255, 70, 70, 0.2), 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+    #alert-panel .panel-header {
+      padding: 14px 18px; border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 14px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;
+      color: #45E796; display: flex; align-items: center; gap: 8px;
+      transition: padding 0.3s ease;
+    }
+    #alert-panel .panel-header .collapse-icon {
+      margin-left: auto; cursor: pointer; font-size: 12px; color: rgba(255,255,255,0.3);
+      transition: color 0.2s;
+    }
+    #alert-panel .panel-header .collapse-icon:hover { color: rgba(255,255,255,0.6); }
+    #alert-panel .panel-header .alert-count {
+      background: rgba(255, 70, 70, 0.2); color: #ff6b6b; padding: 2px 8px; border-radius: 10px; font-size: 12px;
+    }
+    .panel-controls {
+      display: flex; align-items: center; gap: 6px; padding: 8px 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    .panel-controls button {
+      background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #6a6a8a; border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer;
+      transition: all 0.2s;
+    }
+    .panel-controls button:hover { background: rgba(255, 255, 255, 0.1); color: #e8e8f0; }
+    .panel-controls button.muted { color: #ff6b6b; }
+    .panel-controls button.active { background: rgba(69, 231, 150, 0.15); color: #45E796; border-color: rgba(69, 231, 150, 0.3); }
+    #alert-filters {
+      display: flex; gap: 4px; padding: 8px 12px; flex-wrap: wrap;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    .filter-btn {
+      background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #6a6a8a; border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer;
+      transition: all 0.2s; display: flex; align-items: center; gap: 4px;
+    }
+    .filter-btn:hover { background: rgba(255, 255, 255, 0.08); color: #e8e8f0; }
+    .filter-btn.active { background: rgba(69, 231, 150, 0.15); color: #45E796; border-color: rgba(69, 231, 150, 0.3); }
+    .filter-badge {
+      background: rgba(255, 70, 70, 0.2); color: #ff6b6b; padding: 1px 5px; border-radius: 8px;
+      font-size: 10px; font-weight: 600;
+    }
+    #alert-list { flex: 1; overflow-y: auto; padding: 8px; }
+    #alert-list::-webkit-scrollbar { width: 4px; }
+    #alert-list::-webkit-scrollbar-thumb { background: rgba(69, 231, 150, 0.3); border-radius: 2px; }
+
+    .alert-item {
+      padding: 10px 14px; margin-bottom: 6px; border-radius: 8px; cursor: pointer;
+      background: rgba(255, 255, 255, 0.03); border-left: 3px solid transparent;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .alert-item:hover { background: rgba(255, 255, 255, 0.07); }
+    .alert-item.confidence-high { border-left-color: #ff4757; }
+    .alert-item.confidence-medium { border-left-color: #ffa502; }
+    .alert-item.confidence-low { border-left-color: #2ed573; }
+    .alert-item.flash { animation: alert-flash 0.6s ease-in-out 3; }
+    @keyframes alert-flash {
+      0%, 100% { background: rgba(255, 255, 255, 0.03); }
+      50% { background: rgba(255, 70, 70, 0.15); }
+    }
+    .alert-item .alert-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    .alert-item .player-name { font-weight: 600; font-size: 13px; }
+    .alert-item .cheat-type { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .alert-item .alert-msg { font-size: 12px; color: #6a6a8a; margin-bottom: 4px; }
+    .alert-item .alert-bottom { display: flex; justify-content: space-between; align-items: center; }
+    .alert-item .timestamp { font-size: 11px; color: #5a6478; }
+    .confidence-badge {
+      font-size: 10px; padding: 2px 8px; border-radius: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;
+    }
+    .confidence-badge.high { background: rgba(255, 70, 70, 0.2); color: #ff6b6b; }
+    .confidence-badge.medium { background: rgba(255, 165, 2, 0.2); color: #ffa502; }
+    .confidence-badge.low { background: rgba(46, 213, 115, 0.2); color: #2ed573; }
+
+    /* Stats panel - top right, collapsible */
+    #stats-panel {
+      position: absolute; top: 16px; right: 16px; width: 280px; padding: 16px 20px;
+      transition: width 0.3s ease, padding 0.3s ease, border-radius 0.3s ease;
+    }
+    #stats-panel.collapsed {
+      width: 48px; padding: 12px 0; cursor: pointer; border-radius: 14px;
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+    }
+    #stats-panel.collapsed .stat-row,
+    #stats-panel.collapsed .section-title,
+    #stats-panel.collapsed #bar-chart,
+    #stats-panel.collapsed #hourly-timeline { display: none; }
+    #stats-panel.collapsed .collapsed-icon { display: flex; }
+    #stats-panel .collapsed-icon {
+      display: none; flex-direction: column; align-items: center; gap: 2px;
+      font-size: 11px; color: #45E796;
+    }
+    #stats-panel .collapsed-icon .collapsed-value {
+      font-size: 16px; font-weight: 700; color: #e8e8f0;
+    }
+    #stats-panel .collapsed-icon .collapsed-label {
+      font-size: 9px; color: #6a6a8a; text-transform: uppercase;
+    }
+    #stats-panel .stat-row {
+      display: flex; justify-content: space-between; align-items: center; padding: 8px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    #stats-panel .stat-row:last-child { border-bottom: none; }
+    #stats-panel .stat-label { font-size: 12px; color: #6a6a8a; }
+    #stats-panel .stat-value { font-size: 14px; font-weight: 600; }
+
+    /* Horizontal bar chart */
+    .hbar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .hbar-label { font-size: 10px; color: #6a6a8a; width: 70px; flex-shrink: 0; text-align: right; }
+    .hbar-container { flex: 1; height: 14px; background: rgba(255, 255, 255, 0.04); border-radius: 3px; overflow: hidden; }
+    .hbar { height: 100%; border-radius: 3px; transition: width 0.5s ease; min-width: 2px; }
+    .hbar-value { font-size: 11px; font-weight: 600; width: 28px; text-align: right; }
+    .hbar-trend { font-size: 10px; width: 14px; text-align: center; }
+    .hbar-trend.up { color: #ff4757; }
+    .hbar-trend.down { color: #2ed573; }
+    .hbar-trend.neutral { color: #5a6478; }
+
+    /* Hourly timeline */
+    .section-title { font-size: 12px; font-weight: 600; color: #45E796; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; margin-top: 12px; }
+    #hourly-timeline { display: flex; gap: 2px; align-items: flex-end; height: 44px; margin-top: 6px; }
+    .timeline-bar { flex: 1; background: rgba(69, 231, 150, 0.3); border-radius: 1px 1px 0 0; min-height: 2px; transition: height 0.3s; }
+
+    /* Player detail card — bottom popup, agentshire NpcCardPanel style */
+    #player-detail-card {
+      position: absolute; bottom: 18%; left: 16px; right: 16px;
+      max-width: 768px; margin-left: auto; margin-right: auto;
+      padding: 0; display: none; max-height: 42%;
+      background: rgba(30, 30, 30, 0.96);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+      animation: slideUp 0.25s ease;
+    }
+    #player-detail-card.visible { display: flex; flex-direction: column; }
+    @keyframes slideUp {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    #player-detail-card .card-header {
+      padding: 16px 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex; align-items: flex-start; gap: 12px; position: relative;
+      flex-shrink: 0;
+    }
+    #player-detail-card .card-avatar {
+      width: 48px; height: 48px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; color: #fff; font-weight: bold;
+      flex-shrink: 0; border: 2px solid rgba(255, 255, 255, 0.15);
+    }
+    #player-detail-card .card-info { flex: 1; min-width: 0; padding-top: 1px; }
+    #player-detail-card .card-header .player-title { font-size: 17px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 6px; }
+    #player-detail-card .card-status-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    #player-detail-card .card-status-dot.online { background: #34d399; box-shadow: 0 0 6px rgba(52, 211, 153, 0.6); }
+    #player-detail-card .card-status-dot.offline { background: rgba(255, 255, 255, 0.25); }
+    #player-detail-card .card-meta { color: rgba(255, 255, 255, 0.5); font-size: 12px; margin-top: 2px; }
+    #player-detail-card .card-header .close-btn {
+      position: absolute; top: 6px; right: 6px; background: none; border: none;
+      color: rgba(255, 255, 255, 0.35); font-size: 18px; cursor: pointer;
+      width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+      border-radius: 50%; transition: background 0.15s, color 0.15s;
+    }
+    #player-detail-card .card-header .close-btn:hover { color: rgba(255, 255, 255, 0.6); background: rgba(255, 255, 255, 0.08); }
+    #player-detail-card .card-body { padding: 16px 20px; overflow-y: auto; flex: 1; min-height: 0; scrollbar-width: thin; scrollbar-color: rgba(69, 231, 150, 0.3) transparent; }
+    #player-detail-card .card-body::-webkit-scrollbar { width: 4px; }
+    #player-detail-card .card-body::-webkit-scrollbar-track { background: transparent; }
+    #player-detail-card .card-body::-webkit-scrollbar-thumb { background: rgba(69, 231, 150, 0.3); border-radius: 2px; }
+    #player-detail-card .card-body::-webkit-scrollbar-thumb:hover { background: rgba(69, 231, 150, 0.5); }
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+    .info-item { }
+    .info-item .info-label { font-size: 11px; color: #6a6a8a; text-transform: uppercase; letter-spacing: 0.5px; }
+    .info-item .info-value { font-size: 13px; font-weight: 500; margin-top: 2px; color: rgba(255, 255, 255, 0.72); }
+    .record-item {
+      padding: 8px 12px; margin-bottom: 4px; border-radius: 6px; background: rgba(255, 255, 255, 0.03);
+      font-size: 12px; display: flex; justify-content: space-between;
+    }
+    .action-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    .action-btn {
+      padding: 8px 16px; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.72); font-size: 12px; font-weight: 500;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .action-btn:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.2); color: #fff; }
+    .action-btn.danger { border-color: rgba(248, 113, 113, 0.3); color: #f87171; }
+    .action-btn.danger:hover { background: rgba(248, 113, 113, 0.15); }
+    .action-btn.track-btn { border-color: rgba(0, 212, 255, 0.3); color: #00d4ff; }
+    .action-btn.track-btn:hover { background: rgba(0, 212, 255, 0.15); }
+
+    /* Evidence display */
+    .evidence-list { margin-bottom: 12px; }
+    .evidence-item {
+      display: flex; align-items: center; gap: 8px; padding: 6px 10px; margin-bottom: 3px;
+      border-radius: 6px; background: rgba(255, 255, 255, 0.03); font-size: 12px;
+    }
+    .evidence-metric { color: #6a6a8a; width: 80px; }
+    .evidence-value { font-weight: 600; }
+    .evidence-threshold { color: #5a6478; }
+    .evidence-duration { color: #5a6478; margin-left: auto; }
+
+    /* Phase timeline */
+    .phase-timeline { margin-bottom: 12px; }
+    .timeline-entry {
+      display: flex; align-items: center; gap: 6px; padding: 4px 10px; margin-bottom: 3px;
+      border-radius: 6px; background: rgba(255, 255, 255, 0.03); font-size: 12px;
+    }
+    .timeline-arrow { color: #5a6478; }
+    .timeline-time { color: #5a6478; margin-left: auto; font-size: 11px; }
+
+    /* Ban dialog overlay */
+    #ban-dialog-overlay {
+      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: none;
+      justify-content: center; align-items: center; z-index: 100;
+    }
+    #ban-dialog-overlay.visible { display: flex; }
+    #ban-dialog {
+      width: 400px; padding: 24px; border-radius: 16px;
+    }
+    #ban-dialog h3 { font-size: 16px; margin-bottom: 16px; color: #fff; }
+    #ban-dialog label { display: block; font-size: 12px; color: #6a6a8a; margin-bottom: 6px; margin-top: 12px; }
+    #ban-dialog select, #ban-dialog input[type="text"] {
+      width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.05); color: #e8e8f0; font-size: 13px; outline: none;
+    }
+    #ban-dialog select:focus, #ban-dialog input[type="text"]:focus { border-color: rgba(69, 231, 150, 0.5); }
+    #ban-dialog select option { background: #0a0a12; }
+    #ban-dialog .dialog-buttons { display: flex; gap: 12px; margin-top: 20px; justify-content: flex-end; }
+    #ban-dialog .dialog-buttons button {
+      padding: 10px 24px; border-radius: 10px; border: none; font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    #ban-dialog .btn-cancel { background: transparent; border: 1px solid rgba(255, 255, 255, 0.12); color: rgba(255, 255, 255, 0.6); }
+    #ban-dialog .btn-cancel:hover { background: rgba(255, 255, 255, 0.06); color: #fff; }
+    #ban-dialog .btn-confirm { background: #f87171; color: #fff; }
+    #ban-dialog .btn-confirm:hover { filter: brightness(1.1); }
+
+    /* Unban dialog overlay */
+    #unban-dialog-overlay {
+      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: none;
+      justify-content: center; align-items: center; z-index: 100;
+    }
+    #unban-dialog-overlay.visible { display: flex; }
+    #unban-dialog {
+      width: 400px; padding: 24px; border-radius: 16px;
+    }
+    #unban-dialog h3 { font-size: 16px; margin-bottom: 16px; color: #fff; }
+    #unban-dialog .unban-info {
+      padding: 12px 14px; border-radius: 10px; background: rgba(46, 213, 115, 0.08);
+      border: 1px solid rgba(46, 213, 115, 0.2); margin-bottom: 16px; font-size: 13px; color: #2ed573;
+    }
+    #unban-dialog label { display: block; font-size: 12px; color: #6a6a8a; margin-bottom: 6px; margin-top: 12px; }
+    #unban-dialog input[type="text"] {
+      width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.05); color: #e8e8f0; font-size: 13px; outline: none;
+    }
+    #unban-dialog input[type="text"]:focus { border-color: rgba(46, 213, 115, 0.5); }
+    #unban-dialog .dialog-buttons { display: flex; gap: 12px; margin-top: 20px; justify-content: flex-end; }
+    #unban-dialog .dialog-buttons button {
+      padding: 10px 24px; border-radius: 10px; border: none; font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    #unban-dialog .btn-cancel { background: transparent; border: 1px solid rgba(255, 255, 255, 0.12); color: rgba(255, 255, 255, 0.6); }
+    #unban-dialog .btn-cancel:hover { background: rgba(255, 255, 255, 0.06); color: #fff; }
+    #unban-dialog .btn-confirm { background: #2ed573; color: #fff; }
+    #unban-dialog .btn-confirm:hover { filter: brightness(1.1); }
+
+    /* Whitelist dialog overlay */
+    #whitelist-dialog-overlay {
+      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: none;
+      justify-content: center; align-items: center; z-index: 100;
+    }
+    #whitelist-dialog-overlay.visible { display: flex; }
+    #whitelist-dialog {
+      width: 400px; padding: 24px; border-radius: 16px;
+    }
+    #whitelist-dialog h3 { font-size: 16px; margin-bottom: 16px; color: #fff; }
+    #whitelist-dialog .whitelist-info {
+      padding: 12px 14px; border-radius: 10px; background: rgba(69, 170, 242, 0.08);
+      border: 1px solid rgba(69, 170, 242, 0.2); margin-bottom: 16px; font-size: 13px; color: #45aaf2;
+    }
+    #whitelist-dialog label { display: block; font-size: 12px; color: #6a6a8a; margin-bottom: 6px; margin-top: 12px; }
+    #whitelist-dialog input[type="text"] {
+      width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.05); color: #e8e8f0; font-size: 13px; outline: none;
+    }
+    #whitelist-dialog input[type="text"]:focus { border-color: rgba(69, 170, 242, 0.5); }
+    #whitelist-dialog .dialog-buttons { display: flex; gap: 12px; margin-top: 20px; justify-content: flex-end; }
+    #whitelist-dialog .dialog-buttons button {
+      padding: 10px 24px; border-radius: 10px; border: none; font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    #whitelist-dialog .btn-cancel { background: transparent; border: 1px solid rgba(255, 255, 255, 0.12); color: rgba(255, 255, 255, 0.6); }
+    #whitelist-dialog .btn-cancel:hover { background: rgba(255, 255, 255, 0.06); color: #fff; }
+    #whitelist-dialog .btn-confirm { background: #45aaf2; color: #fff; }
+    #whitelist-dialog .btn-confirm:hover { filter: brightness(1.1); }
+
+    /* Records Archive overlay */
+    #records-archive-overlay {
+      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.7); display: none;
+      justify-content: center; align-items: center; z-index: 110;
+    }
+    #records-archive-overlay.visible { display: flex; }
+
+    /* Penalty Log Panel overlay */
+    #penalty-log-panel {
+      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.7); display: none;
+      justify-content: center; align-items: center; z-index: 120;
+    }
+    #penalty-log-panel.visible { display: flex; }
+    .penalty-entry {
+      padding: 10px 14px; margin-bottom: 6px; border-radius: 8px;
+      background: rgba(255, 255, 255, 0.03); border-left: 3px solid transparent;
+    }
+    .penalty-header {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 4px;
+    }
+    .penalty-detail {
+      display: flex; gap: 12px; font-size: 12px; color: #6a6a8a;
+    }
+    #records-archive {
+      width: 90%; max-width: 1000px; max-height: 85vh; padding: 24px;
+      display: flex; flex-direction: column; border-radius: 16px;
+    }
+    #records-archive .archive-header {
+      display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;
+    }
+    #records-archive .archive-header h3 { font-size: 18px; font-weight: 700; color: #fff; }
+    #archive-close {
+      background: none; border: none; color: rgba(255, 255, 255, 0.35); font-size: 20px; cursor: pointer; padding: 4px 8px;
+    }
+    #archive-close:hover { color: #fff; }
+    .archive-filters {
+      display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center;
+    }
+    .archive-filters select, .archive-filters input[type="date"] {
+      padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.05); color: #e8e8f0; font-size: 12px; outline: none;
+    }
+    .archive-filters select option { background: #0a0a12; }
+    .archive-filters input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.8); }
+    #archive-export {
+      padding: 8px 16px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.05); color: #e8e8f0; font-size: 12px; cursor: pointer;
+      transition: all 0.2s; margin-left: auto;
+    }
+    #archive-export:hover { background: rgba(255, 255, 255, 0.1); }
+    .archive-table-container { flex: 1; overflow-y: auto; }
+    .archive-table-container::-webkit-scrollbar { width: 4px; }
+    .archive-table-container::-webkit-scrollbar-thumb { background: rgba(69, 231, 150, 0.3); border-radius: 2px; }
+    .archive-table {
+      width: 100%; border-collapse: collapse; font-size: 13px;
+    }
+    .archive-table th {
+      text-align: left; padding: 10px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      color: #45E796; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+      cursor: pointer; user-select: none; position: sticky; top: 0;
+      background: rgba(10, 10, 18, 0.95);
+    }
+    .archive-table th:hover { color: #fff; }
+    .archive-table td {
+      padding: 10px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    }
+    .archive-table tr:hover td { background: rgba(255, 255, 255, 0.03); }
+    #archive-pagination {
+      display: flex; align-items: center; gap: 4px; margin-top: 16px; justify-content: center;
+    }
+    .page-btn {
+      background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #6a6a8a; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+      transition: all 0.2s;
+    }
+    .page-btn:hover { background: rgba(255, 255, 255, 0.1); color: #e8e8f0; }
+    .page-btn.active { background: rgba(69, 231, 150, 0.15); color: #45E796; border-color: rgba(69, 231, 150, 0.3); }
+    .page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .page-info { font-size: 11px; color: #5a6478; margin-left: 12px; }
+
+    /* Connection status */
+    #connection-status {
+      position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+      padding: 6px 16px; font-size: 11px; border-radius: 20px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    #connection-status .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+    }
+    #connection-status .dot.connected { background: #2ed573; box-shadow: 0 0 8px rgba(46, 213, 115, 0.5); }
+    #connection-status .dot.disconnected { background: #ff4757; box-shadow: 0 0 8px rgba(255, 70, 70, 0.5); }
+    #connection-status .dot.connecting { background: #ffa502; animation: pulse-dot 1s infinite; }
+    @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    /* Keyboard shortcut hints — auto-hide */
+    #shortcut-hints {
+      position: absolute; bottom: 16px; right: 16px;
+      padding: 10px 14px; font-size: 10px; color: #5a6478;
+      transition: opacity 0.5s ease;
+    }
+    #shortcut-hints.auto-hidden { opacity: 0; pointer-events: none; }
+    #shortcut-hints.auto-hidden:hover { opacity: 1; pointer-events: auto; }
+    #shortcut-hints .hint { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+    #shortcut-hints kbd {
+      background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 3px; padding: 1px 5px; font-size: 10px; font-family: inherit;
+    }
+
+    /* Dark mode support */
+    @media (prefers-color-scheme: light) {
+      html, body { background: #e8ecf2; color: #1a1f2e; }
+      .glass-panel {
+        background: rgba(240, 244, 250, 0.88);
+        border-color: rgba(60, 80, 140, 0.15);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+      }
+      #alert-panel .panel-header { color: #2da66e; }
+      .alert-item { background: rgba(0, 0, 0, 0.03); }
+      .alert-item:hover { background: rgba(0, 0, 0, 0.06); }
+      .alert-item .alert-msg { color: #5a6478; }
+      .alert-item .timestamp { color: #8892a8; }
+      .info-item .info-label { color: #8892a8; }
+      .info-item .info-value { color: #1a1f2e; }
+      .filter-btn { color: #5a6478; border-color: rgba(60, 80, 140, 0.15); }
+      .filter-btn:hover { color: #1a1f2e; }
+      .filter-btn.active { background: rgba(45, 166, 110, 0.12); color: #2da66e; }
+      .hbar-label { color: #5a6478; }
+      .hbar-container { background: rgba(0, 0, 0, 0.06); }
+      .section-title { color: #2da66e; }
+      #shortcut-hints { color: #8892a8; }
+      #shortcut-hints kbd { background: rgba(0, 0, 0, 0.06); border-color: rgba(60, 80, 140, 0.15); }
+      .evidence-metric, .evidence-threshold, .evidence-duration { color: #5a6478; }
+      .timeline-arrow, .timeline-time { color: #8892a8; }
+      .page-info { color: #8892a8; }
+    }
+  </style>
+</head>
+<body>
+  <div id="canvas-container"></div>
+  <div id="ui-overlay">
+    <div id="alert-panel" class="glass-panel collapsed">
+      <div class="panel-header">
+        <span>🔔</span>
+        <span class="alert-count" id="alert-count">0</span>
+        <span class="collapse-icon" id="alert-collapse" title="收起">◀</span>
+      </div>
+      <div class="panel-controls">
+        <button id="alert-sound-toggle" title="切换音效">🔊</button>
+        <button id="alert-clear-all" title="清空所有告警">清空</button>
+        <button id="alert-auto-scroll" class="active" title="自动滚动">自动</button>
+      </div>
+      <div id="alert-filters"></div>
+      <div id="alert-list"></div>
+    </div>
+
+    <div id="stats-panel" class="glass-panel collapsed">
+      <div class="collapsed-icon" id="stats-collapsed-icon">
+        <span class="collapsed-value" id="collapsed-online">0</span>
+        <span class="collapsed-label">在线</span>
+        <span class="collapsed-value" id="collapsed-alerts">0</span>
+        <span class="collapsed-label">告警</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">在线玩家</span>
+        <span class="stat-value" id="stat-online">0 / 0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">活跃告警</span>
+        <span class="stat-value" id="stat-alerts">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">封禁总数</span>
+        <span class="stat-value" id="stat-bans">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">白名单</span>
+        <span class="stat-value" id="stat-whitelist">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">检测总数</span>
+        <span class="stat-value" id="stat-total-detections">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">运行时间</span>
+        <span class="stat-value" id="stat-since" style="font-size:11px;">--</span>
+      </div>
+      <div class="section-title" style="margin-top:12px;">按类型统计</div>
+      <div id="bar-chart"></div>
+      <div class="section-title" style="margin-top:12px;">每小时活动</div>
+      <div id="hourly-timeline"></div>
+    </div>
+
+    <div id="player-detail-card" class="glass-panel">
+      <div class="card-header">
+        <div class="card-avatar" id="detail-avatar"></div>
+        <div class="card-info">
+          <div class="player-title" id="detail-name">--</div>
+          <div class="card-meta" id="detail-meta"></div>
+        </div>
+        <button class="close-btn" id="detail-close">&times;</button>
+      </div>
+      <div class="card-body" id="detail-body"></div>
+    </div>
+
+    <div id="ban-dialog-overlay">
+      <div id="ban-dialog" class="glass-panel">
+        <h3>确认封禁</h3>
+        <label for="ban-duration">封禁时长</label>
+        <select id="ban-duration">
+          <option value="1h">1 小时</option>
+          <option value="6h">6 小时</option>
+          <option value="24h">24 小时</option>
+          <option value="7d">7 天</option>
+          <option value="30d">30 天</option>
+          <option value="permanent">永久</option>
+        </select>
+        <label for="ban-reason">封禁原因</label>
+        <input type="text" id="ban-reason" placeholder="请输入封禁原因..." />
+        <div class="dialog-buttons">
+          <button class="btn-cancel" id="ban-cancel">取消</button>
+          <button class="btn-confirm" id="ban-confirm">确认封禁</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="unban-dialog-overlay">
+      <div id="unban-dialog" class="glass-panel">
+        <h3>确认解封</h3>
+        <div class="unban-info" id="unban-player-info">该玩家当前处于封禁状态</div>
+        <label for="unban-reason">解封原因</label>
+        <input type="text" id="unban-reason" placeholder="请输入解封原因..." />
+        <div class="dialog-buttons">
+          <button class="btn-cancel" id="unban-cancel">取消</button>
+          <button class="btn-confirm" id="unban-confirm">确认解封</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="whitelist-dialog-overlay">
+      <div id="whitelist-dialog" class="glass-panel">
+        <h3>添加白名单</h3>
+        <div class="whitelist-info" id="whitelist-player-info">将该玩家加入白名单后，系统将不再对其执行自动处罚</div>
+        <label for="whitelist-reason">添加原因</label>
+        <input type="text" id="whitelist-reason" placeholder="请输入添加白名单原因..." />
+        <div class="dialog-buttons">
+          <button class="btn-cancel" id="whitelist-cancel">取消</button>
+          <button class="btn-confirm" id="whitelist-confirm">确认添加</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="records-archive-overlay">
+      <div id="records-archive" class="glass-panel">
+        <div class="archive-header">
+          <h3>作弊记录馆</h3>
+          <button id="archive-close">&times;</button>
+        </div>
+        <div class="archive-filters">
+          <select id="archive-filter-type">
+            <option value="">全部类型</option>
+            <option value="fly">飞行作弊</option>
+            <option value="speed">加速作弊</option>
+            <option value="kill_aura">杀戮光环</option>
+            <option value="x_ray">透视</option>
+            <option value="scaffold">自动搭桥</option>
+            <option value="auto_clicker">自动点击</option>
+            <option value="reach">攻击距离</option>
+          </select>
+          <select id="archive-filter-confidence">
+            <option value="">全部置信度</option>
+            <option value="low">低</option>
+            <option value="medium">中</option>
+            <option value="high">高</option>
+          </select>
+          <input type="date" id="archive-filter-from" title="起始日期" />
+          <input type="date" id="archive-filter-to" title="结束日期" />
+          <button id="archive-export">导出 CSV</button>
+        </div>
+        <div class="archive-table-container">
+          <table class="archive-table">
+            <thead>
+              <tr>
+                <th data-sort="playerName">玩家名称</th>
+                <th data-sort="cheatType">作弊类型</th>
+                <th data-sort="confidence">置信度</th>
+                <th data-sort="action">操作</th>
+                <th data-sort="timestamp">时间</th>
+              </tr>
+            </thead>
+            <tbody id="archive-table-body"></tbody>
+          </table>
+        </div>
+        <div id="archive-pagination"></div>
+      </div>
+    </div>
+
+    <div id="penalty-log-panel" class="glass-panel">
+      <div style="width:90%;max-width:800px;max-height:80vh;display:flex;flex-direction:column;border-radius:16px;background:rgba(10,10,18,0.98);border:1px solid rgba(255,255,255,0.1);">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.06);">
+          <h3 style="font-size:18px;font-weight:700;color:#fff;">处罚日志</h3>
+          <button id="penalty-log-close" style="background:none;border:none;color:rgba(255,255,255,0.35);font-size:20px;cursor:pointer;padding:4px 8px;">&times;</button>
+        </div>
+        <div id="penalty-log-list" style="flex:1;overflow-y:auto;padding:12px 16px;"></div>
+      </div>
+    </div>
+
+    <div id="connection-status" class="glass-panel">
+      <span class="dot disconnected" id="conn-dot"></span>
+      <span id="conn-text">未连接</span>
+    </div>
+
+    <div id="shortcut-hints" class="glass-panel">
+      <div class="hint"><kbd>中键拖拽</kbd> 旋转视角</div>
+      <div class="hint"><kbd>Shift+中键</kbd> 平移</div>
+      <div class="hint"><kbd>滚轮</kbd> 缩放</div>
+      <div class="hint"><kbd>右键拖拽</kbd> 旋转</div>
+      <div class="hint"><kbd>Shift+右键</kbd> 平移</div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

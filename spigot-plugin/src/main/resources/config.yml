@@ -1,0 +1,10 @@
+# AntiCheat Monitor Plugin Configuration
+
+# WebSocket server URI (Node.js backend)
+ws-uri: "ws://localhost:55211/spigot"
+
+# Server display name
+server-name: "main-server"
+
+# Movement sampling interval (milliseconds)
+sample-interval: 250
