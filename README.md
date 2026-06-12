@@ -6,9 +6,7 @@
 [![Minecraft](https://img.shields.io/badge/Minecraft-1.20.4-brightgreen)](https://www.spigotmc.org/)
 [![Docker](https://img.shields.io/badge/Docker-supported-2496ED)](https://www.docker.com/)
 
-<!-- 项目截图占位：请将截图放入 docs/images/ 目录后解除注释
-![MCACS 3D监控面板概览](docs/images/overview.png)
--->
+[MCACS 3D监控面板概览](docs/images/overview.png)
 
 ---
 
