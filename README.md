@@ -1,11 +1,4 @@
-# MCACS V2.0 — Minecraft Anti-Cheat Suite
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-18%2B-green)](https://nodejs.org/)
-[![Java](https://img.shields.io/badge/Java-17%2B-orange)](https://adoptium.net/)
-[![Minecraft](https://img.shields.io/badge/Minecraft-1.20.4-brightgreen)](https://www.spigotmc.org/)
-[![Docker](https://img.shields.io/badge/Docker-supported-2496ED)](https://www.docker.com/)
-
+# MCACS V2.0 — Minecraft Anti-Cheat System
 ![MCACS 3D监控面板概览](docs/images/overview.png)
 
 ---
