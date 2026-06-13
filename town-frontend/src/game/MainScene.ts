@@ -63,6 +63,7 @@ export class MainScene {
   private playerRecords: Map<string, CheatRecordEntry[]> = new Map()
   private sendAction: ((action: GameAction) => void) | null = null
   private apiBase = ''
+  private apiToken = ''
   private currentMode: 'monitor' | 'life' = 'monitor'
 
   // AbortController for cancelling stale refreshPlayerDetail calls
@@ -346,7 +347,7 @@ export class MainScene {
 
     this.recordsArchive.setOnFetchRecords(async () => {
       try {
-        const resp = await fetch(`${this.apiBase}/api/records`)
+        const resp = await this.apiFetch('/api/records')
         if (resp.ok) {
           return await resp.json() as CheatRecordEntry[]
         }
@@ -475,6 +476,18 @@ export class MainScene {
     this.apiBase = base.replace(/\/$/, '')
   }
 
+  setApiToken(token: string): void {
+    this.apiToken = token
+  }
+
+  private apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+    const headers = new Headers(init.headers)
+    if (this.apiToken) {
+      headers.set('Authorization', `Bearer ${this.apiToken}`)
+    }
+    return fetch(`${this.apiBase}${path}`, { ...init, headers })
+  }
+
   getEventDispatcher(): EventDispatcher {
     return this.eventDispatcher
   }
@@ -530,8 +543,8 @@ export class MainScene {
     try {
       // 并行获取封禁状态和作弊记录
       const [banResp, recordsResp] = await Promise.allSettled([
-        fetch(`${this.apiBase}/api/bans`, { signal: abortController.signal }),
-        fetch(`${this.apiBase}/api/players/${encodeURIComponent(info.playerId ?? playerId)}/records`, { signal: abortController.signal }),
+        this.apiFetch('/api/bans', { signal: abortController.signal }),
+        this.apiFetch(`/api/players/${encodeURIComponent(info.playerId ?? playerId)}/records`, { signal: abortController.signal }),
       ])
 
       // 如果请求已被取消，不再更新状态
@@ -1309,7 +1322,7 @@ export class MainScene {
 
   private async pollStats(): Promise<void> {
     try {
-      const resp = await fetch(`${this.apiBase}/api/stats`)
+      const resp = await this.apiFetch('/api/stats')
       if (resp.ok) {
         const stats = await resp.json() as ServerStats
         this.statsPanel.update(stats)

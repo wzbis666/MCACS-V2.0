@@ -24,7 +24,7 @@
 ```
 ┌─────────────────┐     WebSocket     ┌──────────────────┐     HTTP      ┌──────────────┐
 │  Minecraft 服务器 │ ◄──────────────► │  检测引擎 (Node.js) │ ◄───────────► │  前端监控面板  │
-│  (Spigot 插件)   │    port 55211     │  处罚决策 + 数据存储 │   port 55210  │  (3D 可视化)  │
+│  (Paper 插件)    │    port 55211     │  处罚决策 + 数据存储 │   port 55210  │  (3D 可视化)  │
 └─────────────────┘                    └──────────────────┘               └──────────────┘
 ```
 
@@ -35,16 +35,16 @@
 | 组件 | 最低版本 | 说明 |
 |------|---------|------|
 | 操作系统 | Ubuntu 20.04+ / Debian 11+ / CentOS 7+ | 64 位 |
-| Node.js | 18+ | 检测引擎运行环境 |
-| Java | 17+ | 编译 Spigot 插件 |
-| Maven | 3.6+ | 构建 Spigot 插件 |
+| Node.js | 20+ | 检测引擎运行环境 |
+| Java | 17+ | 编译 Paper 插件 |
+| Maven | 3.6+ | 构建 Paper 插件 |
 | Git | 2.0+ | 克隆项目 |
 | Docker (可选) | 20.10+ | 容器化部署 |
-| Minecraft 服务端 | Spigot/Paper 1.20.4 | 需要安装插件的服务器 |
+| Minecraft 服务端 | Paper 1.20.4 | 需要安装插件的服务器 |
 
 **端口要求:**
 - `55210` — 前端监控面板 + 管理 API
-- `55211` — WebSocket（Spigot 插件与检测引擎通信）
+- `55211` — WebSocket（Paper 插件与检测引擎通信）
 
 ---
 
@@ -75,7 +75,7 @@ docker compose up -d
 docker compose --profile full up -d
 ```
 
-### 4. 构建 Spigot 插件
+### 4. 构建 Paper 插件
 
 ```bash
 # 在宿主机上构建插件（需要 Java 17 + Maven）
@@ -109,9 +109,9 @@ sudo bash install.sh
 
 脚本会自动完成以下操作:
 1. 检测操作系统类型
-2. 安装 Node.js 18+、Java 17+、Maven、Git
+2. 安装 Node.js 20+、Java 17+、Maven、Git
 3. 安装项目依赖并构建前端
-4. 构建 Spigot 插件 JAR
+4. 构建 Paper 插件 JAR
 5. 创建 systemd 服务（开机自启）
 6. 配置防火墙规则
 7. 启动服务并验证
@@ -148,6 +148,9 @@ cd /opt/minecraft-anticheat
 # 安装后端依赖
 npm install
 
+# 构建后端
+npm run build
+
 # 构建前端
 cd town-frontend
 npm install
@@ -155,7 +158,7 @@ npx vite build --outDir dist
 cd ..
 ```
 
-### 3. 构建 Spigot 插件
+### 3. 构建 Paper 插件
 
 ```bash
 cd spigot-plugin
@@ -176,10 +179,11 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/opt/minecraft-anticheat
-ExecStart=/opt/minecraft-anticheat/node_modules/.bin/tsx src/plugin/index.ts
+ExecStart=/usr/bin/node /opt/minecraft-anticheat/dist/plugin/index.js
 Restart=always
 RestartSec=5
 Environment=NODE_ENV=production
+Environment=ACS_HTTP_HOST=0.0.0.0
 Environment=TZ=Asia/Shanghai
 
 [Install]
@@ -221,12 +225,13 @@ cp spigot-plugin/target/minecraft-anticheat-0.1.0.jar /path/to/minecraft/plugins
 
 ```yaml
 # WebSocket 连接地址（指向检测引擎）
-websocket:
-  host: "localhost"        # 如果检测引擎和MC服务器在同一台机器上
-  port: 55211
-  # 如果检测引擎在其他服务器上，改为对应 IP
-  # host: "192.168.1.100"
-  token: ""                # 如果设置了 ACS_AUTH_SECRET，填写相同值
+ws-uri: "ws://localhost:55211/spigot"
+
+# 如果检测引擎在其他服务器上，改为对应 IP
+# ws-uri: "ws://192.168.1.100:55211/spigot"
+
+# 如果设置了 ACS_AUTH_SECRET，填写相同值
+auth-token: ""
 ```
 
 ### 3. 重启 Minecraft 服务器
@@ -321,13 +326,13 @@ penalty:
 
 ### 安全密钥
 
-设置 `ACS_AUTH_SECRET` 后，所有 WebSocket 连接需要携带此 token:
+设置 `ACS_AUTH_SECRET` 后，WebSocket 与管理 API 都需要携带此 token:
 
 ```bash
 echo "ACS_AUTH_SECRET=$(openssl rand -hex 32)" >> .env
 ```
 
-然后在 Spigot 插件配置中填写相同的 token。
+然后在 Paper 插件配置中填写相同的 token。
 
 ---
 
@@ -365,7 +370,7 @@ ss -tlnp | grep 55210
 sudo ufw status
 ```
 
-### Q: Spigot 插件连接失败
+### Q: Paper 插件连接失败
 
 **原因:** 检测引擎地址配置错误或网络不通。
 
@@ -407,7 +412,8 @@ sudo systemctl restart minecraft-anticheat
 ### Q: 数据存储在哪里
 
 所有数据存储在 `/opt/minecraft-anticheat/data/` 目录:
-- `cheat-records.jsonl` — 作弊检测记录
+- `cheat-records.sqlite` — 作弊检测查询库（SQLite WAL）
+- `cheat-records.jsonl` — 作弊检测审计日志
 - `bans.jsonl` — 封禁/解封记录
 - `whitelist.jsonl` — 白名单记录
 - `vp-snapshot.json` — VP 积分快照

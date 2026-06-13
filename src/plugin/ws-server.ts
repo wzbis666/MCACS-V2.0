@@ -3,6 +3,7 @@ import type { AntiCheatEvent, SpigotAction, SpigotMessage } from '../contracts/i
 import { translateSpigotMessage } from './event-translator.js'
 
 const PORT = 55211
+const HOST = process.env.ACS_WS_HOST ?? '0.0.0.0'
 const HEARTBEAT_INTERVAL = 30_000
 const AUTH_SECRET = process.env.ACS_AUTH_SECRET ?? null
 
@@ -27,17 +28,19 @@ export class WsServer {
   }
 
   start(): void {
-    this.wss = new WebSocketServer({ port: PORT, host: '127.0.0.1' })
+    this.wss = new WebSocketServer({ port: PORT, host: HOST })
 
     this.wss.on('connection', (ws, req) => {
-      const path = req.url ?? '/'
+      const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
+      const path = url.pathname
       const ip = req.socket.remoteAddress ?? 'unknown'
       console.log(`[WsServer] New connection from ${ip}, path: "${path}"`)
 
       // 身份验证：如果设置了共享密钥，校验 URL 中的 token 参数
       if (this.authSecret) {
-        const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
-        const token = url.searchParams.get('token')
+        const authHeader = req.headers.authorization
+        const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice('Bearer '.length) : null
+        const token = url.searchParams.get('token') ?? bearerToken
         if (token !== this.authSecret) {
           console.warn(`[WsServer] Auth failed for ${ip} — rejecting connection`)
           ws.close(4001, 'Authentication required')
@@ -52,7 +55,7 @@ export class WsServer {
       }
     })
 
-    console.log(`[WsServer] Listening on ws://localhost:${PORT}`)
+    console.log(`[WsServer] Listening on ws://${HOST}:${PORT}`)
   }
 
   stop(): void {

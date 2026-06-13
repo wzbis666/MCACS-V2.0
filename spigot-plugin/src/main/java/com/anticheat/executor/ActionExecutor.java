@@ -46,7 +46,7 @@ public class ActionExecutor {
         final String uuidStr = uuidRaw;
 
         if (action == null || uuidStr == null) {
-            sendResult(actionId, false, "Missing action or uuid");
+            sendResult(actionId, null, action, false, "Missing action or uuid");
             return;
         }
 
@@ -54,7 +54,7 @@ public class ActionExecutor {
         try {
             uuid = UUID.fromString(uuidStr);
         } catch (IllegalArgumentException e) {
-            sendResult(actionId, false, "Invalid UUID: " + uuidStr);
+            sendResult(actionId, null, action, false, "Invalid UUID: " + uuidStr);
             return;
         }
 
@@ -108,7 +108,7 @@ public class ActionExecutor {
                     resultMsg = "Unknown action: " + action;
                     break;
             }
-            sendResult(actionId, success, resultMsg);
+            sendResult(actionId, uuid, action, success, resultMsg);
         });
     }
 
@@ -262,9 +262,9 @@ public class ActionExecutor {
         return true;
     }
 
-    private void sendResult(String actionId, boolean success, String message) {
+    private void sendResult(String actionId, UUID uuid, String action, boolean success, String message) {
         if (actionId != null && wsClient != null) {
-            wsClient.send(MessageProtocol.actionExecuted(actionId, success, message));
+            wsClient.send(MessageProtocol.actionExecuted(actionId, uuid, action, success, message));
         }
     }
 

@@ -64,7 +64,7 @@ const DEFAULT_THRESHOLDS: SpeedThresholds = {
 
 // ── 远程阈值获取 URL（可配置） ──
 
-const DEFAULT_REMOTE_URL = 'https://raw.githubusercontent.com/minecraft-anticheat/speed-thresholds/main/thresholds-1.20.4.json'
+const DEFAULT_REMOTE_URL = process.env.ACS_SPEED_THRESHOLDS_URL ?? ''
 
 // ── 服务类 ──
 
@@ -93,6 +93,10 @@ export class SpeedThresholdService {
   /** 启动定期刷新 */
   start(): void {
     if (this.refreshTimer) return
+    if (!this.remoteUrl) {
+      console.log('[SpeedThreshold] Remote auto-refresh disabled; using local cache/builtin thresholds')
+      return
+    }
     // 启动时立即尝试获取一次
     this.fetchRemote()
     this.refreshTimer = setInterval(() => this.fetchRemote(), this.refreshIntervalMs)

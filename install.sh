@@ -49,17 +49,17 @@ check_root() {
     fi
 }
 
-# ── 安装 Node.js 18+ ──
+# ── 安装 Node.js 20+ ──
 install_nodejs() {
     if command -v node &>/dev/null; then
         NODE_VER=$(node -v | sed 's/v//' | cut -d. -f1)
-        if [ "$NODE_VER" -ge 18 ]; then
+        if [ "$NODE_VER" -ge 20 ]; then
             log_info "Node.js $(node -v) 已安装，跳过"
             return
         fi
     fi
 
-    log_step "安装 Node.js 18+"
+    log_step "安装 Node.js 20+"
     case "$OS" in
         ubuntu|debian)
             curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
@@ -160,6 +160,9 @@ setup_node() {
     cd "$INSTALL_DIR"
     npm install
 
+    log_step "构建后端"
+    npm run build
+
     log_step "构建前端"
     cd "$INSTALL_DIR/town-frontend"
     npm install
@@ -167,14 +170,14 @@ setup_node() {
     log_info "前端构建完成 → town-frontend/dist/"
 }
 
-# ── 构建 Spigot 插件 ──
+# ── 构建 Paper 插件 ──
 build_plugin() {
-    log_step "构建 Spigot 插件"
+    log_step "构建 Paper 插件"
     cd "$INSTALL_DIR/spigot-plugin"
     mvn clean package -q
     PLUGIN_JAR=$(ls target/minecraft-anticheat-*.jar 2>/dev/null | head -1)
     if [ -z "$PLUGIN_JAR" ]; then
-        log_error "Spigot 插件构建失败，请检查 Java/Maven 配置"
+        log_error "Paper 插件构建失败，请检查 Java/Maven 配置"
         exit 1
     fi
     log_info "插件构建完成: $PLUGIN_JAR"
@@ -196,11 +199,12 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/opt/minecraft-anticheat
-ExecStart=/opt/minecraft-anticheat/node_modules/.bin/tsx src/plugin/index.ts
+ExecStart=/usr/bin/node /opt/minecraft-anticheat/dist/plugin/index.js
 Restart=always
 RestartSec=5
 Environment=NODE_ENV=production
 Environment=ACS_AUTH_SECRET=
+Environment=ACS_HTTP_HOST=0.0.0.0
 Environment=TZ=Asia/Shanghai
 
 # 安全加固
@@ -323,7 +327,7 @@ print_summary() {
     echo -e "  ${BOLD}WebSocket:${NC}   ws://${SERVER_IP}:55211"
     echo ""
     echo -e "  ${BOLD}后续步骤:${NC}"
-    echo "  1. 将 Spigot 插件 JAR 复制到 Minecraft 服务器"
+    echo "  1. 将 Paper 插件 JAR 复制到 Minecraft 服务器"
     echo "     cp spigot-plugin/target/minecraft-anticheat-*.jar /path/to/minecraft/plugins/"
     echo ""
     echo "  2. 重启 Minecraft 服务器"

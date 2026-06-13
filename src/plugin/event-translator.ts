@@ -1,4 +1,4 @@
-import type { AntiCheatEvent, SpigotMessage } from '../contracts/index.js'
+import type { ActionType, AntiCheatEvent, SpigotMessage } from '../contracts/index.js'
 
 // Spigot sends: uuid, attacker, victim
 // Node expects: playerId, attackerId, victimId
@@ -83,6 +83,15 @@ export function translateSpigotMessage(msg: SpigotMessage): AntiCheatEvent | nul
         playerId: normalizePlayerId(raw),
         oldMode: String(msg.oldMode ?? ''),
         newMode: String(msg.newMode ?? ''),
+      }
+
+    case 'action_executed':
+      return {
+        type: 'action_executed',
+        playerId: normalizePlayerId(raw),
+        action: String(raw.action ?? 'warning') as ActionType,
+        actionId: raw.actionId === undefined ? undefined : String(raw.actionId),
+        result: raw.result !== undefined ? String(raw.result) : raw.success === true ? 'success' : 'failed',
       }
 
     case 'heartbeat':

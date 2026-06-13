@@ -4,6 +4,8 @@
 // VP 是处罚决策的核心量化指标，替代仅靠置信度的粗粒度判定。
 
 import type { CheatType, Confidence } from '../contracts/index.js'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 
 // ── VP 权重配置 ──
 
@@ -93,6 +95,12 @@ export class VPManager {
   private repeatOffenderWindowDays: number
   private repeatDurationMultiplier: number
   private autoUpgradeOnNth: number
+  private vpWeights: Record<Confidence, number>
+  private vpTypeMultipliers: Record<CheatType, number>
+  private thresholds: PenaltyThreshold[]
+  private decayIntervalMs: number
+  private decayAmount: number
+  private snapshotIntervalMs: number
 
   constructor(dataDir: string, opts?: {
     whitelistMultiplier?: number
@@ -101,6 +109,12 @@ export class VPManager {
     repeatOffenderWindowDays?: number
     repeatDurationMultiplier?: number
     autoUpgradeOnNth?: number
+    vpWeights?: Record<Confidence, number>
+    vpTypeMultipliers?: Record<CheatType, number>
+    thresholds?: PenaltyThreshold[]
+    decayIntervalMs?: number
+    decayAmount?: number
+    snapshotIntervalMs?: number
   }) {
     this.dataDir = dataDir
     this.whitelistMultiplier = opts?.whitelistMultiplier ?? 2.0
@@ -109,6 +123,12 @@ export class VPManager {
     this.repeatOffenderWindowDays = opts?.repeatOffenderWindowDays ?? 30
     this.repeatDurationMultiplier = opts?.repeatDurationMultiplier ?? 1.5
     this.autoUpgradeOnNth = opts?.autoUpgradeOnNth ?? 3
+    this.vpWeights = { ...VP_WEIGHTS, ...opts?.vpWeights }
+    this.vpTypeMultipliers = { ...VP_TYPE_MULTIPLIERS, ...opts?.vpTypeMultipliers }
+    this.thresholds = opts?.thresholds ?? PENALTY_THRESHOLDS
+    this.decayIntervalMs = opts?.decayIntervalMs ?? DECAY_INTERVAL_MS
+    this.decayAmount = opts?.decayAmount ?? DECAY_AMOUNT
+    this.snapshotIntervalMs = opts?.snapshotIntervalMs ?? SNAPSHOT_INTERVAL_MS
 
     this.loadSnapshot()
     this.startDecayTimer()
@@ -143,8 +163,8 @@ export class VPManager {
     }
 
     // 计算基础 VP
-    let baseVP = VP_WEIGHTS[confidence]
-    let multiplier = VP_TYPE_MULTIPLIERS[cheatType]
+    let baseVP = this.vpWeights[confidence]
+    let multiplier = this.vpTypeMultipliers[cheatType]
 
     // 白名单玩家 VP 阈值 ×2（通过降低 VP 增量实现）
     if (isWhitelisted) {
@@ -233,12 +253,17 @@ export class VPManager {
     if (!entry) return null
 
     // 反向遍历找最高匹配阈值（不依赖数组顺序）
-    for (let i = PENALTY_THRESHOLDS.length - 1; i >= 0; i--) {
-      if (entry.totalVP >= PENALTY_THRESHOLDS[i].vp) {
-        return PENALTY_THRESHOLDS[i]
+    for (let i = this.thresholds.length - 1; i >= 0; i--) {
+      if (entry.totalVP >= this.thresholds[i].vp) {
+        return this.thresholds[i]
       }
     }
     return null
+  }
+
+  /** 获取当前处罚阈值 */
+  getThresholds(): PenaltyThreshold[] {
+    return this.thresholds
   }
 
   /** 检查累犯加重：返回调整后的 duration */
@@ -291,18 +316,18 @@ export class VPManager {
   private startDecayTimer(): void {
     this.decayTimer = setInterval(() => {
       this.runDecay()
-    }, DECAY_INTERVAL_MS)
+    }, this.decayIntervalMs)
   }
 
   private runDecay(): void {
     const now = Date.now()
     for (const entry of this.entries.values()) {
       // 仅对超过 10 分钟未检测的玩家衰减
-      if (now - entry.lastDetectionAt >= DECAY_INTERVAL_MS && entry.totalVP > 0) {
-        entry.totalVP = Math.max(0, entry.totalVP - DECAY_AMOUNT)
+      if (now - entry.lastDetectionAt >= this.decayIntervalMs && entry.totalVP > 0) {
+        entry.totalVP = Math.max(0, entry.totalVP - this.decayAmount)
         // 同步衰减各类型 VP
         for (const key of Object.keys(entry.vpByType) as CheatType[]) {
-          entry.vpByType[key] = Math.max(0, entry.vpByType[key] - (DECAY_AMOUNT / 7))
+          entry.vpByType[key] = Math.max(0, entry.vpByType[key] - (this.decayAmount / 7))
         }
       }
     }
@@ -313,13 +338,55 @@ export class VPManager {
   private startSnapshotTimer(): void {
     this.snapshotTimer = setInterval(() => {
       this.saveSnapshot()
-    }, SNAPSHOT_INTERVAL_MS)
+    }, this.snapshotIntervalMs)
+  }
+
+  setConfig(opts: {
+    whitelistMultiplier?: number
+    newPlayerGraceMinutes?: number
+    newPlayerVPMultiplier?: number
+    repeatOffenderWindowDays?: number
+    repeatDurationMultiplier?: number
+    autoUpgradeOnNth?: number
+    vpWeights?: Record<Confidence, number>
+    vpTypeMultipliers?: Record<CheatType, number>
+    thresholds?: PenaltyThreshold[]
+    decayIntervalMs?: number
+    decayAmount?: number
+    snapshotIntervalMs?: number
+  }): void {
+    this.whitelistMultiplier = opts.whitelistMultiplier ?? this.whitelistMultiplier
+    this.newPlayerGraceMinutes = opts.newPlayerGraceMinutes ?? this.newPlayerGraceMinutes
+    this.newPlayerVPMultiplier = opts.newPlayerVPMultiplier ?? this.newPlayerVPMultiplier
+    this.repeatOffenderWindowDays = opts.repeatOffenderWindowDays ?? this.repeatOffenderWindowDays
+    this.repeatDurationMultiplier = opts.repeatDurationMultiplier ?? this.repeatDurationMultiplier
+    this.autoUpgradeOnNth = opts.autoUpgradeOnNth ?? this.autoUpgradeOnNth
+    this.vpWeights = opts.vpWeights ? { ...VP_WEIGHTS, ...opts.vpWeights } : this.vpWeights
+    this.vpTypeMultipliers = opts.vpTypeMultipliers ? { ...VP_TYPE_MULTIPLIERS, ...opts.vpTypeMultipliers } : this.vpTypeMultipliers
+    this.thresholds = opts.thresholds ?? this.thresholds
+    this.decayAmount = opts.decayAmount ?? this.decayAmount
+
+    if (opts.decayIntervalMs !== undefined && opts.decayIntervalMs !== this.decayIntervalMs) {
+      this.decayIntervalMs = opts.decayIntervalMs
+      if (this.decayTimer) {
+        clearInterval(this.decayTimer)
+        this.decayTimer = null
+        this.startDecayTimer()
+      }
+    }
+
+    if (opts.snapshotIntervalMs !== undefined && opts.snapshotIntervalMs !== this.snapshotIntervalMs) {
+      this.snapshotIntervalMs = opts.snapshotIntervalMs
+      if (this.snapshotTimer) {
+        clearInterval(this.snapshotTimer)
+        this.snapshotTimer = null
+        this.startSnapshotTimer()
+      }
+    }
   }
 
   private saveSnapshot(): void {
     try {
-      const { writeFileSync, mkdirSync } = require('node:fs')
-      const { dirname } = require('node:path')
       const filePath = `${this.dataDir}/vp-snapshot.json`
       const dir = dirname(filePath)
       mkdirSync(dir, { recursive: true })
@@ -338,7 +405,6 @@ export class VPManager {
 
   private loadSnapshot(): void {
     try {
-      const { existsSync, readFileSync } = require('node:fs')
       const filePath = `${this.dataDir}/vp-snapshot.json`
       if (!existsSync(filePath)) return
 

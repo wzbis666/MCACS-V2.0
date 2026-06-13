@@ -5,10 +5,35 @@ import type { GameEvent } from './data/GameProtocol.js'
 import { serializeAction, parseMessage } from './data/GameProtocol.js'
 import type { GameAction } from './data/GameProtocol.js'
 
+function resolveDefaultWsUrl(): string {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const port = window.location.port
+  if (port === '' || port === '80' || port === '443') {
+    return `${protocol}//${window.location.host}/ws`
+  }
+  return `${protocol}//${window.location.hostname}:55211`
+}
+
+function resolveDefaultApiBase(): string {
+  const port = window.location.port
+  if (port === '' || port === '80' || port === '443' || port === '55210') {
+    return window.location.origin
+  }
+  return `${window.location.protocol}//${window.location.hostname}:55210`
+}
+
+function withToken(url: string, token: string): string {
+  if (!token) return url
+  const parsed = new URL(url, window.location.href)
+  parsed.searchParams.set('token', token)
+  return parsed.toString()
+}
+
+const AUTH_TOKEN = import.meta.env.VITE_ACS_AUTH_TOKEN ?? new URLSearchParams(window.location.search).get('token') ?? ''
 /** WebSocket 连接地址 — 可通过 VITE_WS_URL 环境变量覆盖（构建时注入） */
-const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:55211'
+const WS_URL = withToken(import.meta.env.VITE_WS_URL ?? resolveDefaultWsUrl(), AUTH_TOKEN)
 /** HTTP API 基础地址 — 可通过 VITE_API_BASE 环境变量覆盖（构建时注入） */
-const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:55210'
+const API_BASE = import.meta.env.VITE_API_BASE ?? resolveDefaultApiBase()
 
 class Application {
   private scene: MainScene
@@ -22,6 +47,7 @@ class Application {
     const container = document.getElementById('canvas-container')!
     this.scene = new MainScene(container)
     this.scene.setApiBase(API_BASE)
+    this.scene.setApiToken(AUTH_TOKEN)
 
     this.scene.setSendAction((action: GameAction) => {
       this.sendAction(action)

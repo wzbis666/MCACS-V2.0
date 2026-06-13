@@ -17,6 +17,9 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.json.simple.JSONObject;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+
 public class AntiCheatPlugin extends JavaPlugin {
 
     private String wsUri;
@@ -25,11 +28,13 @@ public class AntiCheatPlugin extends JavaPlugin {
     private CombatTracker combatTracker;
     private BlockTracker blockTracker;
     private ActionExecutor actionExecutor;
+    private long sampleIntervalMs;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
-        wsUri = getConfig().getString("ws-uri", "ws://localhost:55211/spigot");
+        wsUri = buildWsUri();
+        sampleIntervalMs = getConfig().getLong("sample-interval", 250L);
         movementTracker = new MovementTracker();
         combatTracker = new CombatTracker();
         blockTracker = new BlockTracker();
@@ -109,6 +114,9 @@ public class AntiCheatPlugin extends JavaPlugin {
 
         switch (args[0].toLowerCase()) {
             case "reload" -> {
+                reloadConfig();
+                wsUri = buildWsUri();
+                sampleIntervalMs = getConfig().getLong("sample-interval", 250L);
                 wsClient.disconnect();
                 wsClient.connect();
                 sender.sendMessage("§a[AntiCheat] WebSocket reconnected.");
@@ -175,5 +183,19 @@ public class AntiCheatPlugin extends JavaPlugin {
 
     public ActionExecutor getActionExecutor() {
         return actionExecutor;
+    }
+
+    public long getSampleIntervalMs() {
+        return sampleIntervalMs;
+    }
+
+    private String buildWsUri() {
+        String uri = getConfig().getString("ws-uri", "ws://localhost:55211/spigot");
+        String token = getConfig().getString("auth-token", "");
+        if (token == null || token.isBlank() || uri.contains("token=")) {
+            return uri;
+        }
+        String separator = uri.contains("?") ? "&" : "?";
+        return uri + separator + "token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
     }
 }

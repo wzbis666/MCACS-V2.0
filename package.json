@@ -1,7 +1,7 @@
 {
   "name": "minecraft-anticheat",
   "version": "0.1.0",
-  "description": "Minecraft Spigot anti-cheat monitoring system with 3D visualization",
+  "description": "Minecraft Paper anti-cheat monitoring system with 3D visualization",
   "main": "./src/plugin/index.ts",
   "type": "module",
   "license": "MIT",
@@ -9,6 +9,7 @@
     "dev": "tsx watch src/plugin/index.ts",
     "start": "tsx src/plugin/index.ts",
     "build": "tsc",
+    "build:paper": "cd spigot-plugin && mvn clean package -q",
     "build:spigot": "cd spigot-plugin && mvn clean package -q",
     "build:frontend": "cd town-frontend && npx tsc --noEmit",
     "build:all": "tsc && cd spigot-plugin && mvn clean package -q && cd ../town-frontend && npx tsc --noEmit",
@@ -16,10 +17,14 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "better-sqlite3": "^12.10.0",
+    "fastify": "^5.8.5",
     "ws": "^8.16.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/ws": "^8.5.10",
+    "esbuild": "^0.28.1",
     "tsx": "^4.7.0",
     "typescript": "^5.4.0",
     "vitest": "^4.1.0"

@@ -21,13 +21,15 @@ export class ActionDispatcher {
   /** 待确认队列：actionId → QueuedAction */
   private pendingAcks = new Map<string, QueuedAction>()
   private retryIntervalMs: number
+  private maxAttempts: number
   private retryTimer: ReturnType<typeof setInterval> | null = null
   /** 动作确认回调：用于通知外部系统（如 PenaltyEngine）处罚已确认执行 */
   private onAckCallback: ((actionId: string, playerId: string) => void) | null = null
 
-  constructor(wsServer: WsServer, opts?: { retryIntervalMs?: number; onAck?: (actionId: string, playerId: string) => void }) {
+  constructor(wsServer: WsServer, opts?: { retryIntervalMs?: number; maxAttempts?: number; onAck?: (actionId: string, playerId: string) => void }) {
     this.wsServer = wsServer
     this.retryIntervalMs = opts?.retryIntervalMs ?? 15_000
+    this.maxAttempts = opts?.maxAttempts ?? 3
     this.onAckCallback = opts?.onAck ?? null
   }
 
@@ -51,7 +53,7 @@ export class ActionDispatcher {
         action,
         timestamp,
         attempts: 1,
-        maxAttempts: 3,
+        maxAttempts: this.maxAttempts,
         penaltyId,
       })
     }
@@ -72,8 +74,7 @@ export class ActionDispatcher {
   nack(actionId: string): void {
     const queued = this.pendingAcks.get(actionId)
     if (!queued) return
-    queued.attempts++
-    if (queued.attempts > queued.maxAttempts) {
+    if (queued.attempts >= queued.maxAttempts) {
       console.error(`[ActionDispatcher] Action ${actionId} failed after ${queued.maxAttempts} attempts, giving up`)
       this.pendingAcks.delete(actionId)
     }
@@ -89,9 +90,25 @@ export class ActionDispatcher {
         this.pendingAcks.delete(actionId)
         continue
       }
-      if (queued.attempts <= queued.maxAttempts) {
+      if (queued.attempts < queued.maxAttempts) {
+        queued.attempts++
         console.log(`[ActionDispatcher] Retrying ${queued.action.type} (attempt ${queued.attempts}/${queued.maxAttempts})`)
         this.doSend(queued.action)
+      }
+    }
+  }
+
+  setRetryOptions(opts: { retryIntervalMs?: number; maxAttempts?: number }): void {
+    if (opts.maxAttempts !== undefined) {
+      this.maxAttempts = Math.max(1, opts.maxAttempts)
+    }
+
+    if (opts.retryIntervalMs !== undefined && opts.retryIntervalMs !== this.retryIntervalMs) {
+      this.retryIntervalMs = opts.retryIntervalMs
+      if (this.retryTimer) {
+        clearInterval(this.retryTimer)
+        this.retryTimer = null
+        this.start()
       }
     }
   }

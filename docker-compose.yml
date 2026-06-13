@@ -23,6 +23,7 @@ services:
     environment:
       - NODE_ENV=production
       - ACS_AUTH_SECRET=${ACS_AUTH_SECRET:-}
+      - ACS_HTTP_HOST=0.0.0.0
       - TZ=Asia/Shanghai
     volumes:
       - ./data:/app/data           # 持久化检测记录、封禁数据

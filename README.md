@@ -77,7 +77,7 @@ MCACS 持续为每个玩家建立**正常行为分布曲线**：
 
 ```
 ┌─ 数据采集层 (Java) ───────────────────────────────────────────┐
-│  Spigot Plugin │ 独立线程采集 · 毫秒级采样 · 无阻塞游戏主线程    │
+│  Paper Plugin  │ 独立线程采集 · 毫秒级采样 · 无阻塞游戏主线程    │
 │  4 个轻量 Listener · 3 个 Tracker · 事件即发即走                │
 └────────────────────────┬──────────────────────────────────────┘
                          │ WebSocket (MsgPack + 自动重连)
@@ -99,7 +99,8 @@ MCACS 持续为每个玩家建立**正常行为分布曲线**：
 | 语言分离 | 采集层 Java / 分析层 TypeScript | 各司其职，TypeScript 更适合复杂逻辑模型迭代 |
 | 通信协议 | WebSocket + ACK/NACK | 保证处罚指令不会在网络异常时丢失 |
 | 配置策略 | YAML + 文件监听 | 修改即生效，无需接触代码 |
-| 数据存储 | JSONL 追加写 | 不可变审计日志，可追溯所有操作 |
+| 管理 API | Fastify | 路由、鉴权、CORS、健康检查更清晰，便于后续扩展 |
+| 数据存储 | SQLite + JSONL | SQLite 负责高频查询，JSONL 保留不可变审计日志 |
 | 前端框架 | Vite + Three.js | 极快的构建速度，原生 3D 渲染能力 |
 
 ### 5. 性能与安全
@@ -107,7 +108,7 @@ MCACS 持续为每个玩家建立**正常行为分布曲线**：
 - **插件性能**：所有数据采集在独立线程中完成，不阻塞 Minecraft 游戏主线程（Server Tick）
 - **网络开销**：单玩家移动事件约 60 bytes，100 人在线时带宽消耗约 120 KB/s
 - **安全认证**：支持共享密钥认证（`ACS_AUTH_SECRET`），防止未授权连接注入指令
-- **审计追踪**：所有检测、处罚、申诉均写入 JSONL 日志，不可篡改
+- **审计追踪**：检测记录使用 SQLite WAL 加速查询，同时保留 JSONL 审计流水
 
 ![MCACS 系统架构](docs/images/architecture.png)
 
@@ -125,7 +126,7 @@ MCACS 选择了一条不同的路线：
 |------|---------|-------|
 | **管理员体验** | 控制台命令行 / 简陋 Web 表格 | **3D 虚拟城镇**，玩家行为可视化 |
 | **部署复杂度** | 手动配置 / 多步骤安装 | Docker 一行命令启动，或 `sudo bash install.sh` |
-| **资源依赖** | MySQL/Redis 数据库 | 仅需 Node.js + Java，数据以 JSONL 文件存储 |
+| **资源依赖** | MySQL/Redis 数据库 | 仅需 Node.js + Java，SQLite 查询库 + JSONL 审计日志 |
 | **检测透明度** | 闭源黑盒 | 全源码开放，可审计、可定制 |
 | **误封风险** | 单点阈值判断，误封率较高 | VP 累积 + 基线验证 + 风暴检测，三层防护 |
 | **运营友好度** | 需要理解反作弊概念 | 3D 可视化 + 一键操作，所见即所得 |
@@ -170,7 +171,7 @@ sudo bash install.sh
 
 脚本自动完成：系统检测 → 安装 Node.js/Java/Maven → 构建前后端 → 创建 systemd 服务 → 配置防火墙。
 
-### 安装 Spigot 插件
+### 安装 Paper 插件
 
 ```bash
 cd spigot-plugin && mvn clean package -q
@@ -207,7 +208,7 @@ MCACS-V2.0/
 │       ├── ui/                  # UI 面板 (告警 · 封禁 · 统计 · 申诉)
 │       ├── npc/                 # NPC 系统 (模型 · 漫游 · 管理)
 │       └── scene/               # 3D 场景 (建筑 · 车辆 · 装饰)
-├── spigot-plugin/               # 数据采集层 (Java · Maven)
+├── spigot-plugin/               # 数据采集层 (Paper API · Java · Maven)
 │   └── src/main/java/com/anticheat/
 │       ├── listener/            # 事件监听 (移动 · 战斗 · 方块 · 进出)
 │       ├── tracker/             # 数据采集器 (位置 · 攻击 · 破坏)
@@ -262,7 +263,7 @@ echo "ACS_AUTH_SECRET=你的密钥" >> .env
 docker compose restart
 ```
 
-设置后，所有 WebSocket 连接均需携带此 token，防止未授权的指令注入。
+设置后，WebSocket 与管理 API 均需携带此 token，防止未授权的指令注入。
 
 ---
 
@@ -270,10 +271,10 @@ docker compose restart
 
 | 组件 | 最低版本 | 用途 |
 |------|---------|------|
-| Node.js | 18+ | 检测引擎运行环境 |
-| Java | 17+ (OpenJDK) | 编译 Spigot 插件 |
-| Maven | 3.6+ | Spigot 插件构建 |
-| Minecraft | Spigot / Paper 1.20.4 | 目标服务端 |
+| Node.js | 20+ | 检测引擎运行环境 |
+| Java | 17+ (OpenJDK) | 编译 Paper 插件 |
+| Maven | 3.6+ | Paper 插件构建 |
+| Minecraft | Paper 1.20.4 | 推荐目标服务端 |
 | Docker | 20.10+ (可选) | 容器化部署 |
 
 ---

@@ -149,11 +149,19 @@ public final class MessageProtocol {
     }
 
     @SuppressWarnings("unchecked")
-    public static String actionExecuted(String actionId, boolean success, String message) {
+    public static String actionExecuted(String actionId, UUID uuid, String action, boolean success, String message) {
         JSONObject msg = new JSONObject();
         msg.put("type", TYPE_ACTION_EXECUTED);
         msg.put("actionId", actionId);
+        if (uuid != null) {
+            msg.put("uuid", uuid.toString());
+            msg.put("playerId", uuid.toString());
+        }
+        if (action != null) {
+            msg.put("action", action);
+        }
         msg.put("success", success);
+        msg.put("result", success ? "success" : "failed");
         msg.put("message", message);
         msg.put("timestamp", System.currentTimeMillis());
         return msg.toJSONString();

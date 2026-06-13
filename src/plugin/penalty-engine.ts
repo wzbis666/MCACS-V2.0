@@ -4,7 +4,7 @@
 // 生成 SpigotAction，并记录处罚日志。
 
 import type { CheatType, Confidence, SpigotAction, PlayerPhase } from '../contracts/index.js'
-import { VPManager, PENALTY_THRESHOLDS, type PenaltyLevel, type PenaltyRecord } from './vp-manager.js'
+import { VPManager, type PenaltyLevel, type PenaltyRecord } from './vp-manager.js'
 import { randomUUID } from 'node:crypto'
 
 export interface PenaltyResult {
@@ -177,9 +177,10 @@ export class PenaltyEngine {
 
   /** 根据 VP 总分判定 Phase（未达处罚阈值时） */
   private resolvePhaseFromVP(totalVP: number): PlayerPhase | null {
+    const thresholds = this.vpManager.getThresholds()
     // investigating 阈值设为 L0-L1 之间的中点（约 10 VP），确保中等可疑度玩家可见
-    if (totalVP >= (PENALTY_THRESHOLDS[0].vp + PENALTY_THRESHOLDS[1].vp) / 2) return 'investigating'
-    if (totalVP >= PENALTY_THRESHOLDS[0].vp) return 'suspicious'    // VP >= L0 阈值
+    if (totalVP >= (thresholds[0].vp + thresholds[1].vp) / 2) return 'investigating'
+    if (totalVP >= thresholds[0].vp) return 'suspicious'    // VP >= L0 阈值
     return null // normal
   }
 
@@ -217,7 +218,8 @@ export class PenaltyEngine {
 
     // 管理员封禁后也重置 VP
     if (actionType === 'ban') {
-      this.vpManager.resetVPAfterPenalty(playerId, PENALTY_THRESHOLDS[PENALTY_THRESHOLDS.length - 1].vp)
+      const thresholds = this.vpManager.getThresholds()
+      this.vpManager.resetVPAfterPenalty(playerId, thresholds[thresholds.length - 1].vp)
     }
 
     return record

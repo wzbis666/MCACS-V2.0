@@ -15,8 +15,6 @@ import org.bukkit.event.player.PlayerMoveEvent;
 
 public class MovementListener implements Listener {
 
-    private static final long SAMPLE_INTERVAL_MS = 250;
-
     private final AntiCheatPlugin plugin;
     private final MovementTracker tracker;
     private final ActionExecutor executor;
@@ -44,7 +42,7 @@ public class MovementListener implements Listener {
 
         long now = System.currentTimeMillis();
         Long lastSample = lastSampleTimes.get(uuid);
-        if (lastSample != null && (now - lastSample) < SAMPLE_INTERVAL_MS) {
+        if (lastSample != null && (now - lastSample) < plugin.getSampleIntervalMs()) {
             return;
         }
         lastSampleTimes.put(uuid, now);

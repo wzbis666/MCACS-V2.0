@@ -21,6 +21,10 @@ export class IPTracker {
     this.sharedWeight = sharedWeight
   }
 
+  setSharedWeight(sharedWeight: number): void {
+    this.sharedWeight = sharedWeight
+  }
+
   /** 注册玩家 IP */
   registerPlayer(playerId: string, ip: string): void {
     // 如果玩家之前有不同 IP，先从旧 IP 移除

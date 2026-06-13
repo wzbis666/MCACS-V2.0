@@ -10,11 +10,11 @@ import { DetectionEngine, type RecentData, initSpeedThresholdService, shutdownSp
 import { MonitorBridge } from '../bridge/MonitorBridge.js'
 import type { AdminAction } from '../bridge/MonitorBridge.js'
 import { setRuntime, type Runtime } from './runtime.js'
-import { VPManager } from './vp-manager.js'
+import { PENALTY_THRESHOLDS, VPManager, type PenaltyThreshold } from './vp-manager.js'
 import { PenaltyEngine } from './penalty-engine.js'
 import { IPTracker } from './ip-tracker.js'
 import { AppealManager } from './appeal-manager.js'
-import { loadConfig, startConfigWatch, stopConfigWatch } from './penalty-config.js'
+import { loadConfig, startConfigWatch, stopConfigWatch, type PenaltyConfig } from './penalty-config.js'
 import { BannedNpcStore } from './banned-npc-store.js'
 import { BaselineTracker } from './baseline-tracker.js'
 import { VerificationGate } from './verification.js'
@@ -29,6 +29,30 @@ const MAX_RECENT_BLOCKS = 200
 const MAX_RECENT_ACTIONS = 50
 
 const recentDataMap = new Map<string, RecentData>()
+
+function buildPenaltyThresholds(config: PenaltyConfig): PenaltyThreshold[] {
+  return PENALTY_THRESHOLDS.map(threshold => ({
+    ...threshold,
+    vp: config.thresholds[threshold.level],
+  }))
+}
+
+function buildVPManagerOptions(config: PenaltyConfig) {
+  return {
+    whitelistMultiplier: config.whitelistVPMultiplier,
+    newPlayerGraceMinutes: config.newPlayerGraceMinutes,
+    newPlayerVPMultiplier: config.newPlayerVPMultiplier,
+    repeatOffenderWindowDays: config.repeatOffenderWindowDays,
+    repeatDurationMultiplier: config.repeatDurationMultiplier,
+    autoUpgradeOnNth: config.autoUpgradeOnNth,
+    vpWeights: config.vpWeights,
+    vpTypeMultipliers: config.vpTypeMultipliers,
+    thresholds: buildPenaltyThresholds(config),
+    decayIntervalMs: config.decayIntervalMinutes * 60_000,
+    decayAmount: config.decayAmount,
+    snapshotIntervalMs: config.snapshotIntervalMinutes * 60_000,
+  }
+}
 
 function getOrCreateRecentData(playerId: string): RecentData {
   let data = recentDataMap.get(playerId)
@@ -64,14 +88,7 @@ async function main(): Promise<void> {
 
   // ── Penalty system ──
   const config = loadConfig()
-  const vpManager = new VPManager(DATA_DIR, {
-    whitelistMultiplier: config.whitelistVPMultiplier,
-    newPlayerGraceMinutes: config.newPlayerGraceMinutes,
-    newPlayerVPMultiplier: config.newPlayerVPMultiplier,
-    repeatOffenderWindowDays: config.repeatOffenderWindowDays,
-    repeatDurationMultiplier: config.repeatDurationMultiplier,
-    autoUpgradeOnNth: config.autoUpgradeOnNth,
-  })
+  const vpManager = new VPManager(DATA_DIR, buildVPManagerOptions(config))
   const penaltyEngine = new PenaltyEngine(vpManager, {
     enabled: config.enabled,
     actionRetryMax: config.actionRetryMax,
@@ -85,15 +102,20 @@ async function main(): Promise<void> {
   // ── 基线建模 & 最终验证 ──
   const baselineTracker = new BaselineTracker()
   const verificationGate = new VerificationGate()
+  let actionDispatcher: ActionDispatcher
+  let monitorBridge: MonitorBridge
 
   // 启动配置热重载
   startConfigWatch((newConfig) => {
+    vpManager.setConfig(buildVPManagerOptions(newConfig))
     penaltyEngine.setEnabled(newConfig.enabled)
+    ipTracker.setSharedWeight(newConfig.ipSharedWeight)
+    actionDispatcher.setRetryOptions({
+      maxAttempts: newConfig.actionRetryMax,
+      retryIntervalMs: newConfig.actionRetryIntervalSeconds * 1000,
+    })
     console.log(`[Main] Config reloaded: penalty ${newConfig.enabled ? 'ENABLED' : 'DISABLED'}`)
   })
-
-  let actionDispatcher: ActionDispatcher
-  let monitorBridge: MonitorBridge
 
   const wsServer = new WsServer({
     onSpigotEvent(event: AntiCheatEvent) {
@@ -234,6 +256,8 @@ async function main(): Promise<void> {
   })
 
   actionDispatcher = new ActionDispatcher(wsServer, {
+    maxAttempts: config.actionRetryMax,
+    retryIntervalMs: config.actionRetryIntervalSeconds * 1000,
     onAck: (_actionId: string, playerId: string) => {
       // 处罚确认执行后，正式重置 VP
       penaltyEngine.onPenaltyConfirmed(playerId)
