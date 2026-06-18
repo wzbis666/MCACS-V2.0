@@ -1,0 +1,66 @@
+# AntiCheat Penalty Configuration
+# 所有阈值和规则均通过此文件管理，支持热重载（修改后自动生效）
+
+penalty:
+  # 总开关（可关闭自动处罚，仅记录）
+  enabled: true
+
+  # 警告显示时长（毫秒）：作弊警告在游戏界面显示的持续时间
+  # 检测冷却时间与此值保持一致，冷却期间不重复检测同一玩家
+  # 可配置范围：5000-8000（5-8秒）
+  warning_duration_ms: 6000
+
+  # 二次违规封禁时长（冷却后再检测到作弊时的封禁时长）
+  second_offense_ban_duration: 24h
+
+  vp:
+    # 置信度 → VP 基础增量
+    weights:
+      low: 1
+      medium: 3
+      high: 8
+    # 作弊类型 → VP 倍率
+    type_multipliers:
+      kill_aura: 1.5
+      fly: 1.2
+      speed: 1.2
+      reach: 1.3
+      x_ray: 1.0
+      scaffold: 1.0
+      auto_clicker: 0.8
+    # 衰减配置
+    decay:
+      interval_minutes: 30
+      amount: 1
+    # 快照持久化间隔
+    snapshot_interval_minutes: 5
+
+  # 处罚阈值
+  thresholds:
+    L0_warn: 5
+    L1_kick: 15
+    L2_ban_1h: 30
+    L3_ban_24h: 60
+    L4_ban_7d: 100
+    L5_ban_permanent: 150
+
+  # 累犯加重
+  repeat_offender:
+    window_days: 30
+    duration_multiplier: 1.5
+    auto_upgrade_on_nth: 3
+
+  # 白名单玩家 VP 阈值倍率
+  whitelist_vp_multiplier: 2.0
+
+  # 新玩家宽限期
+  new_player_grace_minutes: 5
+  new_player_vp_multiplier: 0.5
+
+  # 动作重试
+  action_retry:
+    max_attempts: 2
+    interval_seconds: 30
+
+  # IP 关联权重（同一 IP 多账号共享 VP 增量比例，0.7 = 70%）
+  ip_shared_weight: 0.7

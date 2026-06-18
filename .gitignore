@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+town-frontend/dist/
+
+# Environment files (contains secrets)
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+.trae/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Data (runtime generated)
+data/
+
+# Spigot plugin build artifacts
+spigot-plugin/target/
+spigot-plugin/.mvn/
+spigot-plugin/dependency-reduced-pom.xml
+
+# Vite temp files
+town-frontend/vite.config.ts.timestamp-*.mjs
+town-frontend/node_modules/
+
+# TypeScript incremental build
+*.tsbuildinfo

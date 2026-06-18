@@ -1,0 +1,17 @@
+# ============================================================
+# Minecraft AntiCheat — 前端 Nginx 镜像（可选，生产环境推荐）
+# 使用: docker compose --profile full up -d
+# ============================================================
+
+FROM node:18-alpine AS builder
+WORKDIR /app
+COPY town-frontend/package.json town-frontend/package-lock.json* ./
+RUN npm ci 2>/dev/null || npm install
+COPY town-frontend/ ./
+RUN npx vite build --outDir dist
+
+FROM nginx:alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
