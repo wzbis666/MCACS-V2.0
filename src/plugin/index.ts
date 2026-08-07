@@ -574,6 +574,30 @@ async function main(): Promise<void> {
           ipWeight,
         )
 
+        let penaltyApproved = false
+        if (penaltyResult.triggered && penaltyResult.action) {
+          const verification = verificationGate.verify(
+            detection.playerId,
+            detection.cheatType,
+            detection.confidence,
+            penaltyResult.totalVP,
+            detections.map(d => ({
+              playerId: d.playerId,
+              cheatType: d.cheatType,
+              confidence: d.confidence,
+              evidence: d.evidence,
+              timestamp: d.timestamp,
+            })),
+            baselineTracker.getBaseline(detection.playerId) ?? null,
+          )
+          penaltyApproved = verification.pass
+          if (!verification.pass) {
+            console.log(
+              `[PenaltyEngine] Penalty for ${state.name} BLOCKED by verification: ${verification.reason}`,
+            )
+          }
+        }
+
         // 广播 VP 更新
         const vpUpdateEvent: AntiCheatEvent = {
           type: 'vp_update',
@@ -592,12 +616,12 @@ async function main(): Promise<void> {
         })
 
         // 更新 Phase
-        if (penaltyResult.targetPhase) {
+        if (penaltyResult.targetPhase && (!penaltyResult.triggered || penaltyApproved)) {
           playerTracker.updatePhase(playerId, penaltyResult.targetPhase)
           monitorBridge.processPhaseChange(
             detection.playerId,
             penaltyResult.targetPhase,
-            penaltyResult.triggered ? 'penalty' : 'detection',
+            penaltyApproved ? 'penalty' : 'detection',
             penaltyResult.totalVP,
             detection.cheatType,
           )
@@ -731,7 +755,7 @@ async function main(): Promise<void> {
           detection.playerId,
           detection.cheatType,
           detection.confidence,
-          penaltyResult.triggered
+          penaltyApproved
             ? `[自动处罚] ${penaltyResult.level} — ${detection.cheatType} (VP: ${penaltyResult.totalVP.toFixed(1)})`
             : `Detected ${detection.cheatType} (confidence: ${detection.confidence}, VP: ${penaltyResult.totalVP.toFixed(1)})`,
         )
@@ -753,8 +777,8 @@ async function main(): Promise<void> {
           cheatType: detection.cheatType,
           confidence: detection.confidence,
           evidence: detection.evidence,
-          action: penaltyResult.triggered ? `auto_${penaltyResult.level}` : (warningResult.isFirstWarning ? 'first_warning' : warningResult.isSecondOffense ? 'second_offense_ban' : 'detect'),
-          actionResult: penaltyResult.triggered ? 'penalty_dispatched' : (warningResult.isSecondOffense ? 'ban_dispatched' : 'recorded'),
+          action: penaltyApproved ? `auto_${penaltyResult.level}` : (warningResult.isFirstWarning ? 'first_warning' : warningResult.isSecondOffense ? 'second_offense_ban' : 'detect'),
+          actionResult: penaltyApproved ? 'penalty_dispatched' : (warningResult.isSecondOffense ? 'ban_dispatched' : 'recorded'),
           timestamp: detection.timestamp,
         }
         banManager.addRecord(record)
@@ -763,30 +787,8 @@ async function main(): Promise<void> {
         state.lastAlertTime = Date.now()
 
         // ── 执行自动处罚（VP 系统触发） ──
-        if (penaltyResult.triggered && penaltyResult.action) {
-          // 最终验证
-          const verification = verificationGate.verify(
-            detection.playerId,
-            detection.cheatType,
-            detection.confidence,
-            penaltyResult.totalVP,
-            detections.map(d => ({
-              playerId: d.playerId,
-              cheatType: d.cheatType,
-              confidence: d.confidence,
-              evidence: d.evidence,
-              timestamp: d.timestamp,
-            })),
-            baselineTracker.getBaseline(detection.playerId) ?? null,
-          )
-
-          if (!verification.pass) {
-            console.log(
-              `[PenaltyEngine] Penalty for ${state.name} BLOCKED by verification: ${verification.reason}`,
-            )
-            continue
-          }
-
+        if (penaltyApproved && penaltyResult.action) {
+          penaltyEngine.markPenaltyDispatched(penaltyResult)
           console.log(
             `[PenaltyEngine] Auto-penalty: ${penaltyResult.level} for ${state.name} — ${penaltyResult.action.type} (VP: ${penaltyResult.totalVP.toFixed(1)})`,
           )

@@ -14,7 +14,6 @@ import { AlertManager } from './AlertManager.js'
 import { EventTranslator } from './EventTranslator.js'
 import { ActivityStream } from './ActivityStream.js'
 import { NpcEventQueue } from './NpcEventQueue.js'
-import { RouteManager } from './RouteManager.js'
 import type { BannedNpcStore, BannedNpcState } from '../plugin/banned-npc-store.js'
 
 const SUSPICIOUS_DECAY_MS = 60_000
@@ -41,7 +40,6 @@ export interface AdminAction {
 export class MonitorBridge {
   private readonly tracker = new PlayerStateTracker()
   private readonly alertManager = new AlertManager()
-  private readonly routeManager: RouteManager
   private readonly translator: EventTranslator
   private readonly activityStream: ActivityStream
   private readonly eventQueue: NpcEventQueue
@@ -53,8 +51,7 @@ export class MonitorBridge {
 
   constructor(sendSpigotAction?: (action: SpigotAction) => void, isPlayerBanned?: (playerId: string) => boolean, bannedNpcStore?: BannedNpcStore) {
     const emitter = (events: GameEvent[]) => this.emit(events)
-    this.routeManager = new RouteManager(emitter)
-    this.translator = new EventTranslator(this.tracker, this.alertManager, this.routeManager)
+    this.translator = new EventTranslator(this.tracker, this.alertManager)
     this.activityStream = new ActivityStream(emitter)
     this.eventQueue = new NpcEventQueue(emitter)
     this.sendSpigotAction = sendSpigotAction ?? null

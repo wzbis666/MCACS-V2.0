@@ -60,6 +60,18 @@ describe('IPTracker', () => {
     expect(ipTracker.getAssociatedPlayers('player1').length).toBe(0)
   })
 
+  it('should remove stale last-seen data while keeping associated players', () => {
+    ipTracker.registerPlayer('player1', '192.168.1.1')
+    ipTracker.registerPlayer('player2', '192.168.1.1')
+
+    ipTracker.removePlayer('player1')
+
+    const [entry] = ipTracker.getAllIPEntries()
+    expect(entry.playerIds).toEqual(new Set(['player2']))
+    expect(entry.lastSeen.has('player1')).toBe(false)
+    expect(entry.lastSeen.has('player2')).toBe(true)
+  })
+
   it('should handle multiple players across different IPs', () => {
     ipTracker.registerPlayer('p1', '10.0.0.1')
     ipTracker.registerPlayer('p2', '10.0.0.1')

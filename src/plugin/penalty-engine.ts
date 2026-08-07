@@ -22,6 +22,8 @@ export interface PenaltyResult {
   targetPhase: PlayerPhase | null
   /** 当前 VP 总分 */
   totalVP: number
+  /** 本次命中的处罚阈值；仅在实际触发处罚时存在 */
+  thresholdVP: number | null
 }
 
 export class PenaltyEngine {
@@ -57,7 +59,7 @@ export class PenaltyEngine {
 
     // 未启用自动处罚时，仅记录 VP
     if (!this.enabled) {
-      return { triggered: false, level: null, action: null, supplementaryActions: [], record: null, targetPhase: null, totalVP }
+      return { triggered: false, level: null, action: null, supplementaryActions: [], record: null, targetPhase: null, totalVP, thresholdVP: null }
     }
 
     // 判定处罚等级
@@ -65,7 +67,7 @@ export class PenaltyEngine {
     if (!threshold) {
       // 未达阈值，确定 Phase
       const targetPhase = this.resolvePhaseFromVP(totalVP)
-      return { triggered: false, level: null, action: null, supplementaryActions: [], record: null, targetPhase, totalVP }
+      return { triggered: false, level: null, action: null, supplementaryActions: [], record: null, targetPhase, totalVP, thresholdVP: null }
     }
 
     // 检查是否已经在此等级处罚过（避免重复处罚）
@@ -73,7 +75,7 @@ export class PenaltyEngine {
     const lastPenalty = recentPenalties[recentPenalties.length - 1]
     if (lastPenalty && lastPenalty.level === threshold.level && Date.now() - lastPenalty.executedAt < 60_000) {
       // 1 分钟内同等级不重复处罚
-      return { triggered: false, level: threshold.level, action: null, supplementaryActions: [], record: null, targetPhase: 'confirmed', totalVP }
+      return { triggered: false, level: threshold.level, action: null, supplementaryActions: [], record: null, targetPhase: 'confirmed', totalVP, thresholdVP: null }
     }
 
     // 生成处罚
@@ -130,7 +132,7 @@ export class PenaltyEngine {
       }
     }
 
-    // 记录处罚
+    // 构造处罚记录；最终验证通过后再由 markPenaltyDispatched 提交。
     const record: PenaltyRecord = {
       penaltyId,
       playerId,
@@ -147,13 +149,23 @@ export class PenaltyEngine {
       result: 'pending',
     }
 
-    this.vpManager.addPenaltyRecord(record)
+    return {
+      triggered: true,
+      level: threshold.level,
+      action,
+      supplementaryActions,
+      record,
+      targetPhase,
+      totalVP,
+      thresholdVP: threshold.vp,
+    }
+  }
 
-    // 处罚后 VP 不立即重置，等待 Spigot 确认执行成功后再重置
-    // 记录阈值供 onPenaltyConfirmed 使用
-    this.pendingThresholds.set(playerId, threshold.vp)
-
-    return { triggered: true, level: threshold.level, action, supplementaryActions, record, targetPhase, totalVP }
+  /** 最终验证通过且主处罚即将分发时，登记处罚与 ACK 后的 VP 重置阈值。 */
+  markPenaltyDispatched(result: PenaltyResult): void {
+    if (!result.triggered || !result.record || result.thresholdVP === null) return
+    this.vpManager.addPenaltyRecord(result.record)
+    this.pendingThresholds.set(result.record.playerId, result.thresholdVP)
   }
 
   /** 处理动作执行结果 */

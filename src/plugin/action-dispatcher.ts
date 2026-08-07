@@ -65,7 +65,9 @@ export class ActionDispatcher {
   ack(actionId: string): void {
     const queued = this.pendingAcks.get(actionId)
     this.pendingAcks.delete(actionId)
-    if (queued && this.onAckCallback) {
+    // Only the primary action of an evaluated penalty carries penaltyId.
+    // VP updates, warnings, freezes, and supplementary actions must not reset VP.
+    if (queued?.penaltyId && this.onAckCallback) {
       this.onAckCallback(actionId, queued.action.playerId)
     }
   }

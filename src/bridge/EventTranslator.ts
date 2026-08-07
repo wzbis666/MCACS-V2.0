@@ -12,7 +12,6 @@ import type {
 import type { GameEvent } from './game-event.js'
 import type { PlayerStateTracker } from './PlayerStateTracker.js'
 import type { AlertManager } from './AlertManager.js'
-import type { RouteManager } from './RouteManager.js'
 
 const SPEED_ANOMALY_THRESHOLD = 0.8
 const COMBAT_ANOMALY_ANGLE = 90
@@ -37,16 +36,13 @@ const CHEAT_TYPE_TO_BUILDING: Record<CheatType, string> = {
 export class EventTranslator {
   private readonly tracker: PlayerStateTracker
   private readonly alertManager: AlertManager
-  private readonly routeManager: RouteManager
 
   constructor(
     tracker: PlayerStateTracker,
     alertManager: AlertManager,
-    routeManager: RouteManager,
   ) {
     this.tracker = tracker
     this.alertManager = alertManager
-    this.routeManager = routeManager
   }
 
   translate(event: AntiCheatEvent): GameEvent[] {
