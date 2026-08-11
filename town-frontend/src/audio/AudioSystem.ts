@@ -36,6 +36,11 @@ export class AudioSystem {
   private _muted = false
   private basePath: string
   private initialized = false
+  private readonly resumeOnInteraction = (): void => {
+    void this.ensureResumed().then(() => {
+      if (this.audioContext?.state === 'running') this.removeResumeListeners()
+    })
+  }
 
   constructor(basePath: string = '/assets/music/') { this.basePath = basePath }
 
@@ -48,6 +53,8 @@ export class AudioSystem {
       this.sfxGain = this.audioContext.createGain()
       this.sfxGain.connect(this.masterGain)
       this.initialized = true
+      this.installResumeListeners()
+      this.resumeOnInteraction()
       return true
     } catch { return false }
   }
@@ -56,6 +63,16 @@ export class AudioSystem {
     if (this.audioContext?.state === 'suspended') {
       try { await this.audioContext.resume() } catch { /* ignore */ }
     }
+  }
+
+  private installResumeListeners(): void {
+    window.addEventListener('pointerdown', this.resumeOnInteraction, { capture: true, passive: true })
+    window.addEventListener('keydown', this.resumeOnInteraction, true)
+  }
+
+  private removeResumeListeners(): void {
+    window.removeEventListener('pointerdown', this.resumeOnInteraction, true)
+    window.removeEventListener('keydown', this.resumeOnInteraction, true)
   }
 
   async preload(): Promise<void> {
@@ -105,6 +122,7 @@ export class AudioSystem {
   toggleMute(): void { this.muted = !this.muted }
 
   destroy(): void {
+    this.removeResumeListeners()
     if (this.audioContext) { this.audioContext.close(); this.audioContext = null }
     this.sounds.clear(); this.initialized = false
   }

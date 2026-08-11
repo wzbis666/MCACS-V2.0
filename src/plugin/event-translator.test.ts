@@ -38,4 +38,28 @@ describe('translateSpigotMessage', () => {
       result: 'failed',
     })
   })
+
+  it('translates Grim violation signals into the shared event contract', () => {
+    const event = translateSpigotMessage({
+      type: 'grim_violation',
+      uuid: '00000000-0000-0000-0000-000000000003',
+      name: 'LocalPlayer',
+      checkName: 'Simulation',
+      violationLevel: 20,
+      severity: 'standard',
+      threshold: 20,
+      timestamp: 123456,
+    })
+
+    expect(event).toEqual({
+      type: 'grim.violation',
+      playerId: '00000000-0000-0000-0000-000000000003',
+      name: 'LocalPlayer',
+      checkName: 'Simulation',
+      violationLevel: 20,
+      severity: 'standard',
+      threshold: 20,
+      timestamp: 123456,
+    })
+  })
 })

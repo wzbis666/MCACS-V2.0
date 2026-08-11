@@ -71,9 +71,19 @@ export class BGMManager {
 
   update(dt: number, period: TimePeriod): void {
     if (!this.enabled || !this.ctx || this.loading) return
-    if (this.ctx.state === 'suspended') return
 
     const desired = resolveTrack(period)
+
+    // Schedule the initial track immediately. If autoplay is blocked, Web Audio
+    // starts it as soon as AudioSystem resumes the context on first interaction.
+    if (!this.current) {
+      this.switchTo(desired)
+      this.pendingTrack = null
+      this.debounceTimer = 0
+      return
+    }
+
+    if (this.ctx.state === 'suspended') return
 
     if (this.current && this.current.track === desired) {
       this.pendingTrack = null

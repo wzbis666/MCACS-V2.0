@@ -1,6 +1,7 @@
 package com.anticheat.ws;
 
 import java.util.UUID;
+import java.util.Collection;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
@@ -22,6 +23,7 @@ public final class MessageProtocol {
     public static final String TYPE_HEARTBEAT = "heartbeat";
     public static final String TYPE_BAN_EXECUTED = "ban_executed";
     public static final String TYPE_UNBAN_EXECUTED = "unban_executed";
+    public static final String TYPE_GRIM_VIOLATION = "grim_violation";
 
     public static final String ACTION_KICK = "kick";
     public static final String ACTION_BAN = "ban";
@@ -82,7 +84,9 @@ public final class MessageProtocol {
     @SuppressWarnings("unchecked")
     public static String playerMove(UUID uuid, double x, double y, double z,
                                     double vx, double vy, double vz,
-                                    boolean onGround, long[] timestamps) {
+                                    boolean onGround, long[] timestamps,
+                                    int ping, Collection<String> statusEffects,
+                                    Collection<String> exemptions) {
         JSONObject msg = new JSONObject();
         msg.put("type", TYPE_PLAYER_MOVE);
         msg.put("uuid", uuid.toString());
@@ -93,6 +97,13 @@ public final class MessageProtocol {
         msg.put("vy", vy);
         msg.put("vz", vz);
         msg.put("onGround", onGround);
+        msg.put("ping", ping);
+        JSONArray effectArr = new JSONArray();
+        effectArr.addAll(statusEffects);
+        msg.put("statusEffects", effectArr);
+        JSONArray exemptionArr = new JSONArray();
+        exemptionArr.addAll(exemptions);
+        msg.put("exemptions", exemptionArr);
         JSONArray tsArr = new JSONArray();
         for (long ts : timestamps) {
             tsArr.add(ts);
@@ -121,7 +132,10 @@ public final class MessageProtocol {
     @SuppressWarnings("unchecked")
     public static String playerBlock(UUID uuid, String action,
                                      String blockType, double speed,
-                                     String sequence) {
+                                     String sequence, int x, int y, int z,
+                                     int exposedFaces, Collection<JSONObject> nearbyOres,
+                                     float yaw, float pitch, String placedFace,
+                                     long placementIntervalMs) {
         JSONObject msg = new JSONObject();
         msg.put("type", TYPE_PLAYER_BLOCK);
         msg.put("uuid", uuid.toString());
@@ -129,6 +143,17 @@ public final class MessageProtocol {
         msg.put("blockType", blockType);
         msg.put("speed", speed);
         msg.put("sequence", sequence);
+        msg.put("x", x);
+        msg.put("y", y);
+        msg.put("z", z);
+        msg.put("exposedFaces", exposedFaces);
+        JSONArray oreArr = new JSONArray();
+        oreArr.addAll(nearbyOres);
+        msg.put("nearbyOres", oreArr);
+        msg.put("yaw", yaw);
+        msg.put("pitch", pitch);
+        msg.put("placedFace", placedFace);
+        msg.put("placementIntervalMs", placementIntervalMs);
         msg.put("timestamp", System.currentTimeMillis());
         return msg.toJSONString();
     }
@@ -208,6 +233,22 @@ public final class MessageProtocol {
         msg.put("uuid", uuid.toString());
         msg.put("name", playerName);
         msg.put("source", source);
+        msg.put("timestamp", System.currentTimeMillis());
+        return msg.toJSONString();
+    }
+
+    @SuppressWarnings("unchecked")
+    public static String grimViolation(UUID uuid, String playerName, String checkName,
+                                       double violationLevel, String severity,
+                                       double threshold) {
+        JSONObject msg = new JSONObject();
+        msg.put("type", TYPE_GRIM_VIOLATION);
+        msg.put("uuid", uuid.toString());
+        msg.put("name", playerName);
+        msg.put("checkName", checkName);
+        msg.put("violationLevel", violationLevel);
+        msg.put("severity", severity);
+        msg.put("threshold", threshold);
         msg.put("timestamp", System.currentTimeMillis());
         return msg.toJSONString();
     }

@@ -51,6 +51,7 @@ export class IPTracker {
     const ipEntry = this.ipMap.get(ip)
     if (ipEntry) {
       ipEntry.playerIds.delete(playerId)
+      ipEntry.lastSeen.delete(playerId)
       if (ipEntry.playerIds.size === 0) {
         this.ipMap.delete(ip)
       }

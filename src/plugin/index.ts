@@ -6,7 +6,7 @@ import { BanManager } from './ban-manager.js'
 import { RecordStore } from './record-store.js'
 import { ActionDispatcher } from './action-dispatcher.js'
 import { EditorServe } from './editor-serve.js'
-import { DetectionEngine, type RecentData, initSpeedThresholdService, shutdownSpeedThresholdService, updateTPS } from './rule-engine.js'
+import { DetectionEngine, type RecentData, getCurrentTPS, initSpeedThresholdService, shutdownSpeedThresholdService, updateTPS } from './rule-engine.js'
 import { MonitorBridge } from '../bridge/MonitorBridge.js'
 import type { AdminAction } from '../bridge/MonitorBridge.js'
 import { setRuntime, type Runtime } from './runtime.js'
@@ -19,7 +19,15 @@ import { BannedNpcStore } from './banned-npc-store.js'
 import { BaselineTracker } from './baseline-tracker.js'
 import { VerificationGate } from './verification.js'
 import { WarningTracker } from './warning-tracker.js'
+import { InvestigationCaseManager, type InvestigationCase } from './investigation-case-manager.js'
+import { OperationsSummaryManager } from './operations-summary-manager.js'
+import { EvidenceBufferManager, type EvidenceContext } from './evidence-buffer-manager.js'
+import { SoftContainmentManager } from './soft-containment-manager.js'
+import { resolveRuntimeMode } from './runtime-mode.js'
+import { resolveStrategyPreset } from './strategy-presets.js'
+import { mapGrimCheckToCheatType } from './grim-integration.js'
 import type { AntiCheatEvent, SpigotAction, CheatDetection, PlayerPhase } from '../contracts/index.js'
+import type { GameEvent } from '../bridge/game-event.js'
 
 const DATA_DIR = './data'
 const RECORDS_FILE = `${DATA_DIR}/cheat-records.jsonl`
@@ -30,6 +38,40 @@ const MAX_RECENT_BLOCKS = 200
 const MAX_RECENT_ACTIONS = 50
 
 const recentDataMap = new Map<string, RecentData>()
+const playerEvidenceContext = new Map<string, Omit<EvidenceContext, 'tps'>>()
+
+function getEvidenceContext(playerId: string, update?: Partial<Omit<EvidenceContext, 'tps'>>): EvidenceContext {
+  const previous = playerEvidenceContext.get(playerId) ?? { ping: null, statusEffects: [], exemptions: [] }
+  const current = update ? {
+    ping: update.ping ?? previous.ping,
+    statusEffects: update.statusEffects ?? previous.statusEffects,
+    exemptions: update.exemptions ?? previous.exemptions,
+  } : previous
+  playerEvidenceContext.set(playerId, current)
+  return { tps: getCurrentTPS(), ...current }
+}
+
+function investigationCaseEvent(
+  investigationCase: InvestigationCase,
+  action: 'opened' | 'updated' | 'resolved',
+  npcId?: string,
+): GameEvent {
+  return {
+    type: 'investigation_case',
+    action,
+    caseId: investigationCase.id,
+    playerId: investigationCase.playerId,
+    npcId,
+    playerName: investigationCase.playerName,
+    status: investigationCase.status,
+    riskLevel: investigationCase.riskLevel,
+    riskScore: investigationCase.riskScore,
+    confidenceScore: investigationCase.confidenceScore,
+    suspectedCheats: investigationCase.suspectedCheats,
+    signalCount: investigationCase.signals.length,
+    updatedAt: investigationCase.updatedAt,
+  }
+}
 
 function buildPenaltyThresholds(config: PenaltyConfig): PenaltyThreshold[] {
   return PENALTY_THRESHOLDS.map(threshold => ({
@@ -80,13 +122,16 @@ function trimRecentData(data: RecentData): void {
 }
 
 async function main(): Promise<void> {
+  const runtimeMode = resolveRuntimeMode()
+  const strategyPreset = resolveStrategyPreset()
+  const dashboardEnabled = runtimeMode === 'dashboard'
   const recordStore = new RecordStore(RECORDS_FILE)
   const banManager = new BanManager(recordStore, DATA_DIR)
   const playerTracker = new PlayerTracker()
   const alertManager = new AlertManager()
 
   // ── Penalty system ──
-  const config = loadConfig()
+  let config = loadConfig()
   const detectionEngine = new DetectionEngine(config.warningDurationMs)
   const speedThresholdService = initSpeedThresholdService()
   const vpManager = new VPManager(DATA_DIR, buildVPManagerOptions(config))
@@ -105,13 +150,23 @@ async function main(): Promise<void> {
   const verificationGate = new VerificationGate()
   // ── 首次警告追踪器 ──
   const warningTracker = new WarningTracker(DATA_DIR, {
+    warningExpiryMs: config.strikeWindowMinutes * 60_000,
     secondOffenseBanDuration: config.secondOffenseBanDuration,
   })
+  const investigationCaseManager = new InvestigationCaseManager(DATA_DIR)
+  const operationsSummaryManager = new OperationsSummaryManager(DATA_DIR)
+  const evidenceBufferManager = new EvidenceBufferManager(DATA_DIR)
+  const softContainmentManager = new SoftContainmentManager(DATA_DIR)
+  for (const pendingCase of investigationCaseManager.getPendingCases()) {
+    evidenceBufferManager.setInvestigating(pendingCase.playerId, true)
+  }
+  operationsSummaryManager.recordSnapshot(0, getCurrentTPS())
   let actionDispatcher: ActionDispatcher
   let monitorBridge: MonitorBridge
 
   // 启动配置热重载
   startConfigWatch((newConfig) => {
+    config = newConfig
     vpManager.setConfig(buildVPManagerOptions(newConfig))
     penaltyEngine.setEnabled(newConfig.enabled)
     ipTracker.setSharedWeight(newConfig.ipSharedWeight)
@@ -121,6 +176,7 @@ async function main(): Promise<void> {
     })
     detectionEngine.setCooldownMs(newConfig.warningDurationMs)
     warningTracker.setSecondOffenseBanDuration(newConfig.secondOffenseBanDuration)
+    warningTracker.setWarningExpiryMs(newConfig.strikeWindowMinutes * 60_000)
     console.log(`[Main] Config reloaded: penalty ${newConfig.enabled ? 'ENABLED' : 'DISABLED'}, cooldown=${newConfig.warningDurationMs}ms, ban=${newConfig.secondOffenseBanDuration}`)
   })
 
@@ -221,11 +277,13 @@ async function main(): Promise<void> {
       if (action.type === 'unban') {
         banManager.unbanPlayer(resolvedPlayerId, 'admin')
         penaltyEngine.adminDismiss(resolvedPlayerId)
+        warningTracker.clearPlayer(resolvedPlayerId)
       }
 
       // 管理员 dismiss 时清除 VP
       if (adminType === 'admin_dismiss') {
         penaltyEngine.adminDismiss(resolvedPlayerId)
+        warningTracker.clearPlayer(resolvedPlayerId)
       }
     },
 
@@ -239,6 +297,7 @@ async function main(): Promise<void> {
       }
       // Send current stats
       const stats = monitorBridge.getStats()
+      operationsSummaryManager.recordSnapshot(stats.onlinePlayers, getCurrentTPS())
       const banStats = banManager.getStats(stats.onlinePlayers)
       const mergedStats = {
         ...stats,
@@ -258,6 +317,18 @@ async function main(): Promise<void> {
           vpByType: entry.vpByType,
         }))
         ws.send(JSON.stringify({ type: 'game_events', events: vpEvents }))
+      }
+
+      const pendingCases = investigationCaseManager.getPendingCases()
+      if (pendingCases.length > 0) {
+        ws.send(JSON.stringify({
+          type: 'game_events',
+          events: pendingCases.map(investigationCase => investigationCaseEvent(
+            investigationCase,
+            'opened',
+            monitorBridge.resolveNpcId(investigationCase.playerId),
+          )),
+        }))
       }
     },
   })
@@ -318,6 +389,24 @@ async function main(): Promise<void> {
     appealManager,
     ipTracker,
     vpManager,
+    investigationCaseManager,
+    operationsSummaryManager,
+    evidenceBufferManager,
+    warningTracker,
+    onInvestigationCaseChanged: (investigationCase) => {
+      evidenceBufferManager.setInvestigating(
+        investigationCase.playerId,
+        investigationCase.status === 'open' || investigationCase.status === 'monitoring',
+      )
+      wsServer.broadcastToBrowsers({
+        type: 'game_events',
+        events: [investigationCaseEvent(
+          investigationCase,
+          'resolved',
+          monitorBridge.resolveNpcId(investigationCase.playerId),
+        )],
+      })
+    },
     resolvePlayerId: (npcId: string) => monitorBridge.resolvePlayerId(npcId),
     resolveNpcId: (playerId: string) => monitorBridge.resolveNpcId(playerId),
   })
@@ -336,13 +425,17 @@ async function main(): Promise<void> {
     baselineTracker,
     verificationGate,
     warningTracker,
+    investigationCaseManager,
+    operationsSummaryManager,
+    evidenceBufferManager,
+    softContainmentManager,
   }
   setRuntime(runtime)
 
   function handleSpigotEvent(event: AntiCheatEvent): void {
     wsServer.broadcastEvent(event)
 
-    monitorBridge.processAntiCheatEvent(event)
+    if (dashboardEnabled) monitorBridge.processAntiCheatEvent(event)
 
     const now = Date.now()
 
@@ -353,6 +446,11 @@ async function main(): Promise<void> {
         )
         // 初始化 TPS
         if (event.tps) updateTPS(event.tps)
+        operationsSummaryManager.recordSnapshot(
+          playerTracker.getAllPlayerStates().length,
+          event.tps ?? getCurrentTPS(),
+          now,
+        )
         break
       }
 
@@ -360,6 +458,8 @@ async function main(): Promise<void> {
         playerTracker.registerPlayer(event.playerId, event.name, event.ip, event.gameMode)
         vpManager.registerPlayer(event.playerId, event.name)
         ipTracker.registerPlayer(event.playerId, event.ip)
+        playerEvidenceContext.set(event.playerId, { ping: null, statusEffects: [], exemptions: [] })
+        operationsSummaryManager.recordSnapshot(playerTracker.getAllPlayerStates().length, getCurrentTPS(), now)
         console.log(`[Main] Player joined: ${event.name} (${event.playerId})`)
         if (ipTracker.hasAssociations(event.playerId)) {
           console.log(`[Main] IP association detected: ${event.name} shares IP with ${ipTracker.getAssociatedPlayers(event.playerId).join(', ')}`)
@@ -368,17 +468,11 @@ async function main(): Promise<void> {
       }
 
       case 'player.leave': {
-        // 时序竞争修复：如果玩家有高 VP（正在被处罚），先更新 MonitorBridge phase 为 punishing
-        // 防止 player_leave 在 penalty 事件之前被处理导致 NPC 被 despawn
-        const vpEntry = vpManager.getEntry(event.playerId)
-        if (vpEntry && vpEntry.totalVP >= 15) {
-          const cheatType = vpEntry.lastCheatType ?? 'fly'
-          monitorBridge.processPhaseChange(event.playerId, 'punishing', `auto-penalty (VP: ${vpEntry.totalVP.toFixed(1)})`, vpEntry.totalVP, cheatType)
-          console.log(`[Main] Pre-marked punishing phase for leaving player: ${event.playerId} (VP: ${vpEntry.totalVP.toFixed(1)})`)
-        }
-
         playerTracker.removePlayer(event.playerId)
         recentDataMap.delete(event.playerId)
+        evidenceBufferManager.clearPlayer(event.playerId)
+        playerEvidenceContext.delete(event.playerId)
+        operationsSummaryManager.recordSnapshot(playerTracker.getAllPlayerStates().length, getCurrentTPS(), now)
         detectionEngine.clearPlayer(event.playerId)
         ipTracker.removePlayer(event.playerId)
         baselineTracker.removePlayer(event.playerId)
@@ -401,6 +495,11 @@ async function main(): Promise<void> {
         // Spigot 确认解封已执行，同步 BanManager
         banManager.unbanPlayer(event.playerId)
         console.log(`[Main] Unban executed: ${event.name} (${event.playerId}), source=${event.source}`)
+        break
+      }
+
+      case 'grim.violation': {
+        handleGrimViolation(event)
         break
       }
 
@@ -435,6 +534,19 @@ async function main(): Promise<void> {
           timestamp: now,
         })
         trimRecentData(moveData)
+        evidenceBufferManager.recordMovement(event.playerId, {
+          x: event.x,
+          y: event.y,
+          z: event.z,
+          vx: event.vx,
+          vy: event.vy,
+          vz: event.vz,
+          onGround: event.onGround,
+        }, getEvidenceContext(event.playerId, {
+          ping: event.ping,
+          statusEffects: event.statusEffects,
+          exemptions: event.exemptions,
+        }), now)
 
         // 更新行为基线
         const speed = Math.sqrt(event.vx * event.vx + event.vy * event.vy + event.vz * event.vz)
@@ -456,6 +568,16 @@ async function main(): Promise<void> {
           timestamp: now,
         })
         trimRecentData(combatData)
+        evidenceBufferManager.recordEvent(event.attackerId, {
+          type: 'combat',
+          victimId: event.victimId,
+          distance: event.distance,
+          angle: event.angle,
+          cps: event.cps,
+          hasLos: event.hasLos,
+          timestamp: now,
+          ...getEvidenceContext(event.attackerId),
+        })
 
         const attackerState = playerTracker.getPlayerState(event.attackerId)
         if (attackerState) {
@@ -475,9 +597,35 @@ async function main(): Promise<void> {
           action: event.action,
           blockType: event.blockType,
           speed: event.speed,
+          x: event.x,
+          y: event.y,
+          z: event.z,
+          exposedFaces: event.exposedFaces,
+          nearbyOres: event.nearbyOres,
+          yaw: event.yaw,
+          pitch: event.pitch,
+          placedFace: event.placedFace,
+          placementIntervalMs: event.placementIntervalMs,
           timestamp: now,
         })
         trimRecentData(blockData)
+        evidenceBufferManager.recordEvent(event.playerId, {
+          type: 'block',
+          action: event.action,
+          blockType: event.blockType,
+          speed: event.speed,
+          x: event.x,
+          y: event.y,
+          z: event.z,
+          exposedFaces: event.exposedFaces,
+          nearbyOres: event.nearbyOres,
+          yaw: event.yaw,
+          pitch: event.pitch,
+          placedFace: event.placedFace,
+          placementIntervalMs: event.placementIntervalMs,
+          timestamp: now,
+          ...getEvidenceContext(event.playerId),
+        })
 
         runDetection(event.playerId)
         break
@@ -491,6 +639,13 @@ async function main(): Promise<void> {
           timestamp: now,
         })
         trimRecentData(actionData)
+        evidenceBufferManager.recordEvent(event.playerId, {
+          type: 'action',
+          action: event.action,
+          state: event.state,
+          timestamp: now,
+          ...getEvidenceContext(event.playerId),
+        })
         runDetection(event.playerId)
         break
       }
@@ -525,9 +680,177 @@ async function main(): Promise<void> {
 
       case 'heartbeat': {
         if (event.tps) updateTPS(event.tps)
+        operationsSummaryManager.recordSnapshot(
+          playerTracker.getAllPlayerStates().length,
+          event.tps ?? getCurrentTPS(),
+          now,
+        )
         break
       }
     }
+  }
+
+  function handleGrimViolation(event: Extract<AntiCheatEvent, { type: 'grim.violation' }>): void {
+    const state = playerTracker.getPlayerState(event.playerId)
+    if (!state) {
+      console.warn(`[Grim] Ignoring signal for unknown player ${event.name} (${event.playerId})`)
+      return
+    }
+    if (banManager.isWhitelisted(event.playerId) || banManager.isBanned(event.playerId)) return
+
+    const cheatType = mapGrimCheckToCheatType(event.checkName)
+    const confidence = event.severity === 'high' ? 'high' : 'medium'
+    const evidence = [{
+      metric: `grim:${event.checkName}`,
+      value: event.violationLevel,
+      threshold: event.threshold,
+      duration: 0,
+    }]
+    const detectionEvent: AntiCheatEvent = {
+      type: 'detection',
+      playerId: event.playerId,
+      cheatType,
+      confidence,
+      evidence,
+    }
+    if (dashboardEnabled) monitorBridge.processAntiCheatEvent(detectionEvent)
+
+    const warningResult = event.severity === 'high'
+      ? { isFirstWarning: false, isSecondOffense: true, warningCount: 2 }
+      : warningTracker.recordDetection(
+          event.playerId,
+          state.name,
+          cheatType,
+          confidence,
+          evidence,
+        )
+    const shouldBan = event.severity === 'high' || warningResult.isSecondOffense
+
+    const caseUpdate = investigationCaseManager.recordDetection({
+      playerId: event.playerId,
+      playerName: state.name,
+      cheatType,
+      confidence,
+      evidence,
+      timestamp: event.timestamp,
+      repeatOffense: shouldBan,
+    })
+    evidenceBufferManager.recordEvent(event.playerId, {
+      type: 'detection',
+      cheatType,
+      confidence,
+      evidence,
+      timestamp: event.timestamp,
+      ...getEvidenceContext(event.playerId),
+    })
+    if (caseUpdate) {
+      if (caseUpdate.created) {
+        operationsSummaryManager.recordCaseOpened(event.timestamp)
+        evidenceBufferManager.beginCase(caseUpdate.investigationCase.id, event.playerId, event.timestamp)
+      }
+      wsServer.broadcastToBrowsers({
+        type: 'game_events',
+        events: [investigationCaseEvent(
+          caseUpdate.investigationCase,
+          caseUpdate.created ? 'opened' : 'updated',
+          monitorBridge.resolveNpcId(event.playerId),
+        )],
+      })
+    }
+
+    const alertMessage = shouldBan
+      ? `[Grim自动处罚] ${event.checkName} VL ${event.violationLevel} — 临时封禁1小时`
+      : `[首次警告] Grim ${event.checkName} VL ${event.violationLevel} — 30分钟内再次检测将封禁1小时`
+    const alertUpdate = alertManager.addAlert(event.playerId, cheatType, confidence, alertMessage)
+    const alertEvent: AntiCheatEvent = {
+      type: 'alert',
+      playerId: event.playerId,
+      cheatType,
+      confidence,
+      message: alertUpdate.alert.message,
+    }
+    wsServer.broadcastToBrowsers({ type: 'game_events', events: [detectionEvent, alertEvent] })
+
+    banManager.addRecord({
+      id: `${event.playerId}-grim-${event.checkName}-${event.timestamp}`,
+      playerId: event.playerId,
+      playerName: state.name,
+      cheatType,
+      confidence,
+      evidence,
+      action: shouldBan ? 'grim_temp_ban_1h' : 'first_warning',
+      actionResult: shouldBan ? 'penalty_dispatched' : 'warning_dispatched',
+      timestamp: event.timestamp,
+    })
+    state.cheatRecordCount++
+    state.lastAlertTime = Date.now()
+
+    if (!shouldBan) {
+      actionDispatcher.dispatch({
+        type: 'persistent_warning',
+        actionId: `grim-warn-${randomUUID().slice(0, 8)}`,
+        playerId: event.playerId,
+        reason: `Grim检测到 ${event.checkName} 异常，请立即停止；30分钟内再次检测将封禁1小时`,
+        cheatType,
+        confidence,
+      })
+      playerTracker.updatePhase(event.playerId, 'suspicious')
+      if (dashboardEnabled) monitorBridge.processPhaseChange(
+        event.playerId,
+        'suspicious',
+        'grim_first_warning',
+        0,
+        cheatType,
+      )
+      console.log(`[Grim] First warning for ${state.name}: ${event.checkName} VL=${event.violationLevel}`)
+      return
+    }
+
+    const reason = event.severity === 'high'
+      ? `Grim高可信检测: ${event.checkName} (VL ${event.violationLevel})`
+      : `Grim二次检测: ${event.checkName} (30分钟共享窗口)`
+    actionDispatcher.dispatch({
+      type: 'ban',
+      actionId: `grim-ban-${randomUUID().slice(0, 8)}`,
+      playerId: event.playerId,
+      reason,
+      duration: config.secondOffenseBanDuration,
+      cheatType,
+      confidence,
+    })
+    banManager.banPlayer(
+      event.playerId,
+      state.name,
+      reason,
+      config.secondOffenseBanDuration,
+      'grim',
+    )
+    warningTracker.clearPlayer(event.playerId)
+    vpManager.clearVP(event.playerId)
+    playerTracker.updatePhase(event.playerId, 'punishing')
+    operationsSummaryManager.recordAutomaticMeasure(event.timestamp)
+    if (dashboardEnabled) monitorBridge.processPhaseChange(
+      event.playerId,
+      'punishing',
+      event.severity === 'high' ? 'grim_high_confidence' : 'grim_second_detection',
+      0,
+      cheatType,
+    )
+    wsServer.broadcastToBrowsers({
+      type: 'game_events',
+      events: [{
+        type: 'penalty',
+        playerId: event.playerId,
+        level: 'temporary',
+        action: 'ban',
+        cheatType,
+        confidence,
+        vp: 0,
+        reason,
+        autoGenerated: true,
+      } satisfies AntiCheatEvent],
+    })
+    console.log(`[Grim] Temporary ban for ${state.name}: ${event.checkName}, duration=${config.secondOffenseBanDuration}`)
   }
 
   function runDetection(playerId: string): void {
@@ -540,6 +863,9 @@ async function main(): Promise<void> {
     if (!recentData) return
 
     const detections = detectionEngine.evaluate(playerId, state, recentData)
+      .filter(detection => strategyPreset.enabledDetectors.has(detection.cheatType))
+      .filter(detection => config.detectionSource === 'legacy'
+        || (config.legacyXrayEnabled && detection.cheatType === 'x_ray'))
 
     if (detections.length > 0) {
       for (const detection of detections) {
@@ -551,16 +877,66 @@ async function main(): Promise<void> {
           evidence: detection.evidence,
         }
         wsServer.broadcastEvent(detectionEvent)
-        monitorBridge.processAntiCheatEvent(detectionEvent)
+        if (dashboardEnabled) monitorBridge.processAntiCheatEvent(detectionEvent)
 
         // ── 首次警告 / 二次封禁 判定 ──
-        const warningResult = warningTracker.recordDetection(
-          detection.playerId,
-          state.name,
-          detection.cheatType,
-          detection.confidence,
-          detection.evidence,
-        )
+        const warningResult = detection.confidence === 'low'
+          ? { isFirstWarning: false, isSecondOffense: false, warningCount: 0 }
+          : warningTracker.recordDetection(
+              detection.playerId,
+              state.name,
+              detection.cheatType,
+              detection.confidence,
+              detection.evidence,
+            )
+
+        const caseUpdate = investigationCaseManager.recordDetection({
+          playerId: detection.playerId,
+          playerName: state.name,
+          cheatType: detection.cheatType,
+          confidence: detection.confidence,
+          evidence: detection.evidence,
+          timestamp: detection.timestamp,
+          repeatOffense: warningResult.isSecondOffense,
+        })
+        evidenceBufferManager.recordEvent(detection.playerId, {
+          type: 'detection',
+          cheatType: detection.cheatType,
+          confidence: detection.confidence,
+          evidence: detection.evidence,
+          timestamp: detection.timestamp,
+          ...getEvidenceContext(detection.playerId),
+        })
+        if (caseUpdate) {
+          if (caseUpdate.created) {
+            operationsSummaryManager.recordCaseOpened(detection.timestamp)
+            evidenceBufferManager.beginCase(
+              caseUpdate.investigationCase.id,
+              detection.playerId,
+              detection.timestamp,
+            )
+          }
+          wsServer.broadcastToBrowsers({
+            type: 'game_events',
+            events: [investigationCaseEvent(
+              caseUpdate.investigationCase,
+              caseUpdate.created ? 'opened' : 'updated',
+              monitorBridge.resolveNpcId(detection.playerId),
+            )],
+          })
+          const containment = softContainmentManager.evaluate(caseUpdate.investigationCase, detection.timestamp)
+          if (containment) {
+            actionDispatcher.dispatch(containment.action)
+            operationsSummaryManager.recordAutomaticMeasure(detection.timestamp)
+            wsServer.broadcastEvent({
+              type: 'alert',
+              playerId: detection.playerId,
+              cheatType: detection.cheatType,
+              confidence: 'high',
+              message: `[可恢复软处置] ${containment.reason}`,
+            })
+          }
+        }
 
         // ── PenaltyEngine 评估（VP 积分系统并行运行） ──
         const isWhitelisted = banManager.isWhitelisted(playerId)
@@ -573,6 +949,30 @@ async function main(): Promise<void> {
           isWhitelisted,
           ipWeight,
         )
+
+        let penaltyApproved = false
+        if (penaltyResult.triggered && penaltyResult.action) {
+          const verification = verificationGate.verify(
+            detection.playerId,
+            detection.cheatType,
+            detection.confidence,
+            penaltyResult.totalVP,
+            detections.map(d => ({
+              playerId: d.playerId,
+              cheatType: d.cheatType,
+              confidence: d.confidence,
+              evidence: d.evidence,
+              timestamp: d.timestamp,
+            })),
+            baselineTracker.getBaseline(detection.playerId) ?? null,
+          )
+          penaltyApproved = verification.pass
+          if (!verification.pass) {
+            console.log(
+              `[PenaltyEngine] Penalty for ${state.name} BLOCKED by verification: ${verification.reason}`,
+            )
+          }
+        }
 
         // 广播 VP 更新
         const vpUpdateEvent: AntiCheatEvent = {
@@ -592,19 +992,19 @@ async function main(): Promise<void> {
         })
 
         // 更新 Phase
-        if (penaltyResult.targetPhase) {
+        if (penaltyResult.targetPhase && (!penaltyResult.triggered || penaltyApproved)) {
           playerTracker.updatePhase(playerId, penaltyResult.targetPhase)
-          monitorBridge.processPhaseChange(
+          if (dashboardEnabled) monitorBridge.processPhaseChange(
             detection.playerId,
             penaltyResult.targetPhase,
-            penaltyResult.triggered ? 'penalty' : 'detection',
+            penaltyApproved ? 'penalty' : 'detection',
             penaltyResult.totalVP,
             detection.cheatType,
           )
         }
 
         // ── 首次检测：立即发送警告到 Spigot ──
-        if (warningResult.isFirstWarning) {
+        if (warningResult.isFirstWarning && detection.confidence === 'high') {
           console.log(`[WarningTracker] First warning for ${state.name}: ${detection.cheatType} (${detection.confidence})`)
 
           // 立即发送持续警告到 Spigot（ActionBar 持续显示）
@@ -618,17 +1018,8 @@ async function main(): Promise<void> {
           })
 
           // 广播首次警告事件到前端
-          const warningEvent: AntiCheatEvent = {
-            type: 'alert',
-            playerId: detection.playerId,
-            cheatType: detection.cheatType,
-            confidence: detection.confidence,
-            message: `[首次警告] ${state.name}: ${detection.cheatType} (${detection.confidence}) — 再次检测将直接封禁`,
-          }
-          wsServer.broadcastEvent(warningEvent)
-
           // 前端告警
-          const alert = alertManager.addAlert(
+          const alertUpdate = alertManager.addAlert(
             detection.playerId,
             detection.cheatType,
             detection.confidence,
@@ -639,13 +1030,15 @@ async function main(): Promise<void> {
             playerId: detection.playerId,
             cheatType: detection.cheatType,
             confidence: detection.confidence,
-            message: alert.message,
+            message: alertUpdate.alert.message,
           }
-          wsServer.broadcastEvent(alertEvent)
+          if (alertUpdate.created || alertUpdate.confidenceRaised) {
+            wsServer.broadcastEvent(alertEvent)
+          }
 
           // 更新 Phase 为 suspicious
           playerTracker.updatePhase(playerId, 'suspicious')
-          monitorBridge.processPhaseChange(
+          if (dashboardEnabled) monitorBridge.processPhaseChange(
             detection.playerId,
             'suspicious',
             'first_warning',
@@ -654,84 +1047,18 @@ async function main(): Promise<void> {
           )
         }
 
-        // ── 二次违规：立即踢出 + 封禁 ──
-        if (warningResult.isSecondOffense && !penaltyResult.triggered) {
-          console.log(`[WarningTracker] SECOND OFFENSE for ${state.name}: ${detection.cheatType} — immediate kick + ban!`)
-
-          const banDuration = warningTracker.getSecondOffenseBanDuration()
-          const banReason = `[AntiCheat] 二次违规自动封禁: ${detection.cheatType} (${detection.confidence})`
-          const kickReason = `§c§l你已被踢出服务器\n§e原因: ${detection.cheatType} 作弊行为（二次违规）\n§e封禁时长: ${banDuration}\n§7冷却期结束后再次检测到作弊，已自动封禁`
-
-          // 先冻结玩家
-          actionDispatcher.dispatch({
-            type: 'freeze',
-            actionId: `freeze-${randomUUID().slice(0, 8)}`,
-            playerId: detection.playerId,
-            reason: 'Second offense — pending kick + ban',
-            duration: '30s',
-          })
-
-          // 踢出玩家（附带明确提示信息）
-          actionDispatcher.dispatch({
-            type: 'kick',
-            actionId: `kick-${randomUUID().slice(0, 8)}`,
-            playerId: detection.playerId,
-            reason: kickReason,
-          })
-
-          // 封禁玩家账号
-          const banAction: SpigotAction = {
-            type: 'ban',
-            actionId: `ban-${randomUUID().slice(0, 8)}`,
-            playerId: detection.playerId,
-            reason: banReason,
-            duration: banDuration,
-          }
-          actionDispatcher.dispatch(banAction)
-
-          // 同步 BanManager
-          banManager.banPlayer(
-            detection.playerId,
-            state.name,
-            banReason,
-            banDuration,
-          )
-
-          // 更新 Phase 为 punishing
-          playerTracker.updatePhase(playerId, 'punishing')
-          monitorBridge.processPhaseChange(
-            detection.playerId,
-            'punishing',
-            'second_offense_ban',
-            penaltyResult.totalVP,
-            detection.cheatType,
-          )
-
-          // 广播封禁事件到前端
-          const penaltyEvent: AntiCheatEvent = {
-            type: 'penalty',
-            playerId: detection.playerId,
-            level: 'L2',
-            action: 'kick_ban',
-            cheatType: detection.cheatType,
-            confidence: detection.confidence,
-            vp: penaltyResult.totalVP,
-            reason: `二次违规: 踢出+封禁 ${banDuration}`,
-            autoGenerated: true,
-          }
-          wsServer.broadcastToBrowsers({ type: 'game_events', events: [penaltyEvent] })
-
-          // 清除警告记录
-          warningTracker.clearPlayer(detection.playerId)
+        // 重复违规只提高案件风险，不再绕过管理员直接执行长期处罚。
+        if (warningResult.isSecondOffense) {
+          console.log(`[WarningTracker] Repeated signal for ${state.name}: ${detection.cheatType} — escalated investigation case`)
         }
 
         // ── VP 系统触发的处罚（原有逻辑） ──
         // 告警
-        const alert = alertManager.addAlert(
+        const alertUpdate = alertManager.addAlert(
           detection.playerId,
           detection.cheatType,
           detection.confidence,
-          penaltyResult.triggered
+          penaltyApproved
             ? `[自动处罚] ${penaltyResult.level} — ${detection.cheatType} (VP: ${penaltyResult.totalVP.toFixed(1)})`
             : `Detected ${detection.cheatType} (confidence: ${detection.confidence}, VP: ${penaltyResult.totalVP.toFixed(1)})`,
         )
@@ -741,9 +1068,11 @@ async function main(): Promise<void> {
           playerId: detection.playerId,
           cheatType: detection.cheatType,
           confidence: detection.confidence,
-          message: alert.message,
+          message: alertUpdate.alert.message,
         }
-        wsServer.broadcastEvent(alertEvent)
+        if (alertUpdate.created || alertUpdate.confidenceRaised || penaltyApproved) {
+          wsServer.broadcastEvent(alertEvent)
+        }
 
         // 记录检测
         const record = {
@@ -753,8 +1082,8 @@ async function main(): Promise<void> {
           cheatType: detection.cheatType,
           confidence: detection.confidence,
           evidence: detection.evidence,
-          action: penaltyResult.triggered ? `auto_${penaltyResult.level}` : (warningResult.isFirstWarning ? 'first_warning' : warningResult.isSecondOffense ? 'second_offense_ban' : 'detect'),
-          actionResult: penaltyResult.triggered ? 'penalty_dispatched' : (warningResult.isSecondOffense ? 'ban_dispatched' : 'recorded'),
+          action: penaltyApproved ? `auto_${penaltyResult.level}` : (warningResult.isFirstWarning && detection.confidence === 'high' ? 'first_warning' : warningResult.isSecondOffense ? 'repeat_signal' : 'detect'),
+          actionResult: penaltyApproved ? 'penalty_dispatched' : (warningResult.isSecondOffense ? 'case_escalated' : 'recorded'),
           timestamp: detection.timestamp,
         }
         banManager.addRecord(record)
@@ -763,30 +1092,9 @@ async function main(): Promise<void> {
         state.lastAlertTime = Date.now()
 
         // ── 执行自动处罚（VP 系统触发） ──
-        if (penaltyResult.triggered && penaltyResult.action) {
-          // 最终验证
-          const verification = verificationGate.verify(
-            detection.playerId,
-            detection.cheatType,
-            detection.confidence,
-            penaltyResult.totalVP,
-            detections.map(d => ({
-              playerId: d.playerId,
-              cheatType: d.cheatType,
-              confidence: d.confidence,
-              evidence: d.evidence,
-              timestamp: d.timestamp,
-            })),
-            baselineTracker.getBaseline(detection.playerId) ?? null,
-          )
-
-          if (!verification.pass) {
-            console.log(
-              `[PenaltyEngine] Penalty for ${state.name} BLOCKED by verification: ${verification.reason}`,
-            )
-            continue
-          }
-
+        if (penaltyApproved && penaltyResult.action) {
+          operationsSummaryManager.recordAutomaticMeasure(detection.timestamp)
+          penaltyEngine.markPenaltyDispatched(penaltyResult)
           console.log(
             `[PenaltyEngine] Auto-penalty: ${penaltyResult.level} for ${state.name} — ${penaltyResult.action.type} (VP: ${penaltyResult.totalVP.toFixed(1)})`,
           )
@@ -883,14 +1191,34 @@ async function main(): Promise<void> {
   console.log('[Main] WebSocket: ws://localhost:55211')
   console.log('[Main] Editor: http://localhost:55210')
   console.log(`[Main] Auto-penalty: ${penaltyEngine.isEnabled() ? 'ENABLED' : 'DISABLED'}`)
+  console.log(`[Main] Runtime mode: ${runtimeMode}, strategy preset: ${strategyPreset.name}`)
+
+  // ── 档案数据 7 天自动覆盖 ──
+  const RECORDS_RETENTION_DAYS = 7
+  const runRecordsPrune = (): void => {
+    try {
+      const deleted = recordStore.pruneOlderThan(RECORDS_RETENTION_DAYS)
+      if (deleted > 0) {
+        console.log(`[Main] Records prune: removed ${deleted} records older than ${RECORDS_RETENTION_DAYS} days`)
+      }
+    } catch (err) {
+      console.error('[Main] Records prune failed:', err)
+    }
+  }
+  // 启动时执行一次，之后每小时执行一次
+  runRecordsPrune()
+  const pruneInterval = setInterval(runRecordsPrune, 60 * 60 * 1000)
 
   const shutdown = (): void => {
     console.log('[Main] Shutting down...')
+    clearInterval(pruneInterval)
     stopConfigWatch()
     shutdownSpeedThresholdService()
     vpManager.destroy()
+    warningTracker.destroy()
     monitorBridge.destroy()
     actionDispatcher.destroy()
+    evidenceBufferManager.flushAll()
     wsServer.stop()
     editorServe.stop()
     process.exit(0)

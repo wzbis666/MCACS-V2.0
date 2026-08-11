@@ -1,6 +1,8 @@
 package com.anticheat.listener;
 
 import java.util.Collection;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import com.anticheat.AntiCheatPlugin;
@@ -16,6 +18,8 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
+import org.bukkit.event.player.PlayerVelocityEvent;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 
@@ -34,6 +38,8 @@ public class MovementListener implements Listener {
     private final Map<UUID, Boolean> wasRiptide = new java.util.concurrent.ConcurrentHashMap<>();
     private final Map<UUID, Boolean> wasInWater = new java.util.concurrent.ConcurrentHashMap<>();
     private final Map<UUID, Boolean> wasSwimming = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<UUID, Long> teleportGraceUntil = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<UUID, Long> knockbackGraceUntil = new java.util.concurrent.ConcurrentHashMap<>();
 
     public MovementListener(AntiCheatPlugin plugin) {
         this.plugin = plugin;
@@ -69,6 +75,11 @@ public class MovementListener implements Listener {
 
         Map<String, Object> data = tracker.getAggregatedData(uuid);
         long[] timestamps = (long[]) data.remove("timestamps");
+        List<String> statusEffects = new ArrayList<>();
+        for (PotionEffect effect : player.getActivePotionEffects()) {
+            statusEffects.add(effect.getType().getKey().getKey() + ":" + (effect.getAmplifier() + 1));
+        }
+        List<String> exemptions = collectExemptions(player);
 
         String message = MessageProtocol.playerMove(
                 uuid,
@@ -79,9 +90,44 @@ public class MovementListener implements Listener {
                 (double) data.get("vy"),
                 (double) data.get("vz"),
                 (boolean) data.get("onGround"),
-                timestamps != null ? timestamps : new long[0]
+                timestamps != null ? timestamps : new long[0],
+                player.getPing(),
+                statusEffects,
+                exemptions
         );
         plugin.getWebSocketClient().send(message);
+    }
+
+    private List<String> collectExemptions(Player player) {
+        List<String> exemptions = new ArrayList<>();
+        switch (player.getGameMode()) {
+            case CREATIVE:
+            case SPECTATOR:
+                exemptions.add("game_mode:" + player.getGameMode().name().toLowerCase());
+                break;
+            default:
+                break;
+        }
+        if (player.getAllowFlight()) exemptions.add("allow_flight");
+        if (player.isInsideVehicle()) exemptions.add("vehicle");
+        if (player.isGliding()) exemptions.add("elytra");
+        if (player.isRiptiding()) exemptions.add("riptide");
+        if (player.isInWater()) exemptions.add("water");
+        if (player.isSwimming()) exemptions.add("swimming");
+        long now = System.currentTimeMillis();
+        if (teleportGraceUntil.getOrDefault(player.getUniqueId(), 0L) >= now) exemptions.add("teleport_grace");
+        if (knockbackGraceUntil.getOrDefault(player.getUniqueId(), 0L) >= now) exemptions.add("knockback_grace");
+        return exemptions;
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onTeleport(PlayerTeleportEvent event) {
+        teleportGraceUntil.put(event.getPlayer().getUniqueId(), System.currentTimeMillis() + 500L);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onVelocity(PlayerVelocityEvent event) {
+        knockbackGraceUntil.put(event.getPlayer().getUniqueId(), System.currentTimeMillis() + 1_000L);
     }
 
     /**
@@ -213,5 +259,7 @@ public class MovementListener implements Listener {
         wasRiptide.remove(uuid);
         wasInWater.remove(uuid);
         wasSwimming.remove(uuid);
+        teleportGraceUntil.remove(uuid);
+        knockbackGraceUntil.remove(uuid);
     }
 }

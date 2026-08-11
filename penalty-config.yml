@@ -1,9 +1,16 @@
 # AntiCheat Penalty Configuration
 # 所有阈值和规则均通过此文件管理，支持热重载（修改后自动生效）
 
+detection:
+  # Grim 负责底层移动/战斗检测；旧检测器仅保留 X-Ray 作为独立补充。
+  source: grim
+  legacy_xray_enabled: true
+  # 所有作弊类型共享一次警告窗口，超时后重新按首次处理。
+  strike_window_minutes: 30
+
 penalty:
-  # 总开关（可关闭自动处罚，仅记录）
-  enabled: true
+  # 低误报默认策略：关闭自动处罚，由调查案件交给管理员复核
+  enabled: false
 
   # 警告显示时长（毫秒）：作弊警告在游戏界面显示的持续时间
   # 检测冷却时间与此值保持一致，冷却期间不重复检测同一玩家
@@ -11,7 +18,7 @@ penalty:
   warning_duration_ms: 6000
 
   # 二次违规封禁时长（冷却后再检测到作弊时的封禁时长）
-  second_offense_ban_duration: 24h
+  second_offense_ban_duration: 1h
 
   vp:
     # 置信度 → VP 基础增量

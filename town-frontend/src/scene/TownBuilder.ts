@@ -8,7 +8,6 @@ import { AssetLoader } from './AssetLoader'
 
 interface BuildingDef {
   id: string
-  name: string
   cheatType: string
   modelKey: string
   pos: [number, number, number]
@@ -21,13 +20,13 @@ interface BuildingDef {
 }
 
 const BUILDINGS: BuildingDef[] = [
-  { id: 'fly_lab',      name: '飞行关押区', cheatType: 'fly',          modelKey: 'building_A', pos: [3, 0, 4],  scale: 3.0, rotationY: 0, doorOffset: [0, 0.05, 14], size: [8, 12, 6], color: 0x6688aa, roofColor: 0x446688 },
-  { id: 'speed_lab',    name: '速度关押区', cheatType: 'speed',        modelKey: 'building_B', pos: [3, 0, 10], scale: 1.8, rotationY: 0, doorOffset: [0, 0.05, 14], size: [3, 4, 3],  color: 0xf5f0e8, roofColor: 0x44aa44 },
-  { id: 'combat_lab',   name: '战斗关押区', cheatType: 'kill_aura',    modelKey: 'building_C', pos: [3, 0, 16], scale: 1.8, rotationY: 0, doorOffset: [0, 0.05, 20], size: [3, 4, 3],  color: 0xf5f0e8, roofColor: 0x4488cc },
-  { id: 'xray_lab',     name: '透视关押区', cheatType: 'x_ray',       modelKey: 'building_D', pos: [32, 0, 4], scale: 1.8, rotationY: 0, doorOffset: [0, 0.05, 8],  size: [3, 4, 3],  color: 0xf5f0e8, roofColor: 0xcc8844 },
-  { id: 'scaffold_lab', name: '搭桥关押区', cheatType: 'scaffold',     modelKey: 'building_E', pos: [32, 0, 10], scale: 2.5, rotationY: 0, doorOffset: [0, 0.05, 17], size: [8, 4, 5],  color: 0xf0f0f0, roofColor: 0x888888 },
-  { id: 'autoclick_lab',name: '点击关押区', cheatType: 'auto_clicker', modelKey: 'building_F', pos: [32, 0, 16], scale: 2.0, rotationY: 0, doorOffset: [0, 0.05, 21], size: [5, 3, 4],  color: 0xd4a574, roofColor: 0xaa7744 },
-  { id: 'reach_lab',    name: '距离关押区', cheatType: 'reach',        modelKey: 'building_G', pos: [17.5, 0, 4], scale: 1.8, rotationY: 0, doorOffset: [0, 0.05, 8],  size: [3, 4, 3],  color: 0xf5f0e8, roofColor: 0xddaa44 },
+  { id: 'fly_lab',      cheatType: 'fly',          modelKey: 'building_A', pos: [3, 0, 4],  scale: 3.0, rotationY: 0, doorOffset: [0, 0.05, 14], size: [8, 12, 6], color: 0x6688aa, roofColor: 0x446688 },
+  { id: 'speed_lab',    cheatType: 'speed',        modelKey: 'building_B', pos: [3, 0, 10], scale: 1.8, rotationY: 0, doorOffset: [0, 0.05, 14], size: [3, 4, 3],  color: 0xf5f0e8, roofColor: 0x44aa44 },
+  { id: 'combat_lab',   cheatType: 'kill_aura',    modelKey: 'building_C', pos: [3, 0, 16], scale: 1.8, rotationY: 0, doorOffset: [0, 0.05, 20], size: [3, 4, 3],  color: 0xf5f0e8, roofColor: 0x4488cc },
+  { id: 'xray_lab',     cheatType: 'x_ray',       modelKey: 'building_D', pos: [32, 0, 4], scale: 1.8, rotationY: 0, doorOffset: [0, 0.05, 8],  size: [3, 4, 3],  color: 0xf5f0e8, roofColor: 0xcc8844 },
+  { id: 'scaffold_lab', cheatType: 'scaffold',     modelKey: 'building_E', pos: [32, 0, 10], scale: 2.5, rotationY: 0, doorOffset: [0, 0.05, 17], size: [8, 4, 5],  color: 0xf0f0f0, roofColor: 0x888888 },
+  { id: 'autoclick_lab',cheatType: 'auto_clicker', modelKey: 'building_F', pos: [32, 0, 16], scale: 2.0, rotationY: 0, doorOffset: [0, 0.05, 21], size: [5, 3, 4],  color: 0xd4a574, roofColor: 0xaa7744 },
+  { id: 'reach_lab',    cheatType: 'reach',        modelKey: 'building_G', pos: [17.5, 0, 4], scale: 1.8, rotationY: 0, doorOffset: [0, 0.05, 8],  size: [3, 4, 3],  color: 0xf5f0e8, roofColor: 0xddaa44 },
 ]
 
 /* ───────── Colors ───────── */
@@ -482,9 +481,6 @@ export class TownBuilder {
       this.townGroup.add(door)
       this.doorMarkers.set(def.id, door)
 
-      // Building sign
-      this.createBuildingSign(def, buildingTopY)
-
       // Detention zone visual elements
       this.buildDetentionZone(def, buildingTopY)
     }
@@ -537,45 +533,6 @@ export class TownBuilder {
 
     // Initialize empty detention list
     this.detainedPlayers.set(def.id, [])
-  }
-
-  private createBuildingSign(def: BuildingDef, topY: number): void {
-    const canvas = document.createElement('canvas')
-    canvas.width = 256
-    canvas.height = 64
-    const ctx = canvas.getContext('2d')!
-
-    ctx.clearRect(0, 0, 256, 64)
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
-    ctx.beginPath()
-    ctx.roundRect(4, 4, 248, 56, 8)
-    ctx.fill()
-
-    const r = (def.color >> 16) & 0xff
-    const g = (def.color >> 8) & 0xff
-    const b = def.color & 0xff
-    ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.6)`
-    ctx.lineWidth = 2
-    ctx.beginPath()
-    ctx.roundRect(4, 4, 248, 56, 8)
-    ctx.stroke()
-
-    const displayName = def.name.length > 10 ? def.name.substring(0, 9) + '..' : def.name
-    ctx.font = 'bold 20px sans-serif'
-    ctx.fillStyle = '#e0e6f0'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(displayName, 128, 32)
-
-    const texture = new THREE.CanvasTexture(canvas)
-    texture.minFilter = THREE.LinearFilter
-
-    const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false })
-    const sprite = new THREE.Sprite(spriteMat)
-    const [bx, , bz] = def.pos
-    sprite.position.set(bx, topY + 0.5, bz)
-    sprite.scale.set(2.5, 0.625, 1)
-    this.townGroup.add(sprite)
   }
 
   /* ───────── Street Lights ───────── */

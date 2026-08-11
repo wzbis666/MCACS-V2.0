@@ -1,7 +1,7 @@
 import type { CheatType, Confidence } from '../contracts/index.js'
 
 const MAX_ALERTS = 1000
-const AGGREGATION_WINDOW = 5000 // 5 seconds
+const AGGREGATION_WINDOW = 60_000
 
 export interface AggregatedAlert {
   playerId: string
@@ -11,6 +11,12 @@ export interface AggregatedAlert {
   count: number
   firstSeen: number
   lastSeen: number
+}
+
+export interface AlertUpdate {
+  alert: AggregatedAlert
+  created: boolean
+  confidenceRaised: boolean
 }
 
 const CONFIDENCE_PRIORITY: Record<Confidence, number> = {
@@ -31,7 +37,7 @@ export class AlertManager {
     cheatType: CheatType,
     confidence: Confidence,
     message: string,
-  ): AggregatedAlert {
+  ): AlertUpdate {
     const now = Date.now()
 
     const existing = this.alerts.find(
@@ -42,13 +48,14 @@ export class AlertManager {
     )
 
     if (existing) {
+      const shouldReplaceMessage = CONFIDENCE_PRIORITY[confidence] > CONFIDENCE_PRIORITY[existing.confidence]
       existing.count++
       existing.lastSeen = now
       existing.confidence = highestConfidence(existing.confidence, confidence)
-      if (CONFIDENCE_PRIORITY[confidence] > CONFIDENCE_PRIORITY[existing.confidence]) {
+      if (shouldReplaceMessage) {
         existing.message = message
       }
-      return existing
+      return { alert: existing, created: false, confidenceRaised: shouldReplaceMessage }
     }
 
     const alert: AggregatedAlert = {
@@ -72,7 +79,7 @@ export class AlertManager {
       this.alerts = this.alerts.slice(0, MAX_ALERTS)
     }
 
-    return alert
+    return { alert, created: true, confidenceRaised: false }
   }
 
   getActiveAlerts(): AggregatedAlert[] {

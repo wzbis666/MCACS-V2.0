@@ -124,21 +124,25 @@
 
     /* Stats panel - top right, collapsible */
     #stats-panel {
-      position: absolute; top: 16px; right: 16px; width: 280px; padding: 16px 20px;
-      transition: width 0.3s ease, padding 0.3s ease, border-radius 0.3s ease;
+      position: absolute; top: 16px; right: 16px; width: 280px; padding: 0;
+      transition: width 0.3s ease, border-radius 0.3s ease;
+      overflow: hidden;
     }
+    #stats-panel.records-mode { width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
     #stats-panel.collapsed {
-      width: 48px; padding: 12px 0; cursor: pointer; border-radius: 14px;
+      width: 48px; cursor: pointer; border-radius: 14px;
+      padding: 12px 0;
       display: flex; flex-direction: column; align-items: center; gap: 6px;
     }
     #stats-panel.collapsed .stat-row,
     #stats-panel.collapsed .section-title,
     #stats-panel.collapsed #bar-chart,
-    #stats-panel.collapsed #hourly-timeline { display: none; }
+    #stats-panel.collapsed #hourly-timeline,
+    #stats-panel.collapsed .stats-tab-bar { display: none; }
     #stats-panel.collapsed .collapsed-icon { display: flex; }
     #stats-panel .collapsed-icon {
       display: none; flex-direction: column; align-items: center; gap: 2px;
-      font-size: 11px; color: #45E796;
+      font-size: 11px; color: #45E796; padding: 0;
     }
     #stats-panel .collapsed-icon .collapsed-value {
       font-size: 16px; font-weight: 700; color: #e8e8f0;
@@ -146,6 +150,24 @@
     #stats-panel .collapsed-icon .collapsed-label {
       font-size: 9px; color: #6a6a8a; text-transform: uppercase;
     }
+
+    /* Tab bar */
+    .stats-tab-bar {
+      display: flex; gap: 0; padding: 8px 12px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .stats-tab {
+      padding: 8px 16px; border: none; background: transparent;
+      color: #6a6a8a; font-size: 12px; font-weight: 600; cursor: pointer;
+      border-bottom: 2px solid transparent; transition: all 0.2s;
+      font-family: inherit; letter-spacing: 0.5px; text-transform: uppercase;
+    }
+    .stats-tab:hover { color: #e0e6f0; }
+    .stats-tab.active { color: #45E796; border-bottom-color: #45E796; }
+    .stats-tab-content { padding: 16px 20px; overflow-y: auto; }
+    .stats-tab-content.hidden { display: none; }
+    #stats-panel.records-mode .stats-tab-content { padding: 12px 16px; flex: 1; min-height: 0; }
+
     #stats-panel .stat-row {
       display: flex; justify-content: space-between; align-items: center; padding: 8px 0;
       border-bottom: 1px solid rgba(255, 255, 255, 0.04);
@@ -169,6 +191,43 @@
     .section-title { font-size: 12px; font-weight: 600; color: #45E796; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; margin-top: 12px; }
     #hourly-timeline { display: flex; gap: 2px; align-items: flex-end; height: 44px; margin-top: 6px; }
     .timeline-bar { flex: 1; background: rgba(69, 231, 150, 0.3); border-radius: 1px 1px 0 0; min-height: 2px; transition: height 0.3s; }
+
+    /* Stats panel — archive records view */
+    #stats-panel .archive-filters {
+      display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; align-items: center;
+    }
+    #stats-panel .archive-filters select,
+    #stats-panel .archive-filters input[type="date"] {
+      padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.05); color: #e8e8f0; font-size: 11px; outline: none;
+    }
+    #stats-panel .archive-filters select option { background: #0a0a12; }
+    #stats-panel .archive-filters input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.8); }
+    #stats-panel .archive-table-container {
+      overflow-y: auto; max-height: 360px;
+      scrollbar-width: thin; scrollbar-color: rgba(69, 231, 150, 0.3) transparent;
+    }
+    #stats-panel .archive-table-container::-webkit-scrollbar { width: 4px; }
+    #stats-panel .archive-table-container::-webkit-scrollbar-thumb { background: rgba(69, 231, 150, 0.3); border-radius: 2px; }
+    #stats-panel .archive-table-container::-webkit-scrollbar-track { background: transparent; }
+    #stats-panel .archive-table {
+      width: 100%; border-collapse: collapse; font-size: 12px;
+    }
+    #stats-panel .archive-table th {
+      text-align: left; padding: 8px 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      color: #45E796; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+      cursor: pointer; user-select: none; position: sticky; top: 0;
+      background: rgba(10, 10, 18, 0.96);
+    }
+    #stats-panel .archive-table th:hover { color: #fff; }
+    #stats-panel .archive-table td {
+      padding: 8px 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    }
+    #stats-panel .archive-table tr:hover td { background: rgba(255, 255, 255, 0.03); }
+    #stats-panel .archive-pagination {
+      display: flex; align-items: center; gap: 4px; margin-top: 12px; justify-content: center;
+    }
+    #stats-panel .archive-pagination .page-info { font-size: 10px; color: #5a6478; margin-left: 8px; }
 
     /* Player detail card — bottom popup, agentshire NpcCardPanel style */
     #player-detail-card {
@@ -341,13 +400,6 @@
     #whitelist-dialog .btn-cancel:hover { background: rgba(255, 255, 255, 0.06); color: #fff; }
     #whitelist-dialog .btn-confirm { background: #45aaf2; color: #fff; }
     #whitelist-dialog .btn-confirm:hover { filter: brightness(1.1); }
-
-    /* Records Archive overlay */
-    #records-archive-overlay {
-      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.7); display: none;
-      justify-content: center; align-items: center; z-index: 110;
-    }
-    #records-archive-overlay.visible { display: flex; }
 
     /* Penalty Log Panel overlay */
     #penalty-log-panel {
@@ -590,51 +642,6 @@
           <button class="btn-cancel" id="whitelist-cancel">取消</button>
           <button class="btn-confirm" id="whitelist-confirm">确认添加</button>
         </div>
-      </div>
-    </div>
-
-    <div id="records-archive-overlay">
-      <div id="records-archive" class="glass-panel">
-        <div class="archive-header">
-          <h3>作弊记录馆</h3>
-          <button id="archive-close">&times;</button>
-        </div>
-        <div class="archive-filters">
-          <select id="archive-filter-type">
-            <option value="">全部类型</option>
-            <option value="fly">飞行作弊</option>
-            <option value="speed">加速作弊</option>
-            <option value="kill_aura">杀戮光环</option>
-            <option value="x_ray">透视</option>
-            <option value="scaffold">自动搭桥</option>
-            <option value="auto_clicker">自动点击</option>
-            <option value="reach">攻击距离</option>
-          </select>
-          <select id="archive-filter-confidence">
-            <option value="">全部置信度</option>
-            <option value="low">低</option>
-            <option value="medium">中</option>
-            <option value="high">高</option>
-          </select>
-          <input type="date" id="archive-filter-from" title="起始日期" />
-          <input type="date" id="archive-filter-to" title="结束日期" />
-          <button id="archive-export">导出 CSV</button>
-        </div>
-        <div class="archive-table-container">
-          <table class="archive-table">
-            <thead>
-              <tr>
-                <th data-sort="playerName">玩家名称</th>
-                <th data-sort="cheatType">作弊类型</th>
-                <th data-sort="confidence">置信度</th>
-                <th data-sort="action">操作</th>
-                <th data-sort="timestamp">时间</th>
-              </tr>
-            </thead>
-            <tbody id="archive-table-body"></tbody>
-          </table>
-        </div>
-        <div id="archive-pagination"></div>
       </div>
     </div>
 

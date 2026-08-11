@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js'
 
 const BASE = import.meta.env.BASE_URL + 'assets/models'
+export const ADMIN_CHARACTER_KEY = 'character-male-c'
 
 const MANIFEST = {
   buildings: {
@@ -138,7 +139,7 @@ export class AssetLoader {
 
   /** Get a random character model — each NPC gets a unique appearance */
   getRandomCharacterModel(): THREE.Group | null {
-    const keys = Object.keys(MANIFEST.characters)
+    const keys = Object.keys(MANIFEST.characters).filter(key => key !== ADMIN_CHARACTER_KEY)
     const key = keys[Math.floor(Math.random() * keys.length)]
     return this.getCharacterModel(key)
   }

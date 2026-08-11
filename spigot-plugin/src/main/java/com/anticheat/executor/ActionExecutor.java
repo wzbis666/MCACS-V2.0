@@ -23,6 +23,8 @@ public class ActionExecutor {
     private final Map<UUID, Long> frozenPlayers = new ConcurrentHashMap<>();
     // 封禁冻结：记录封禁信息（reason + duration），用于持续显示封禁提示
     private final Map<UUID, BanFreezeInfo> banFreezeInfoMap = new ConcurrentHashMap<>();
+    private final Map<String, Long> processedActionIds = new ConcurrentHashMap<>();
+    private static final long ACTION_ID_TTL_MS = 10 * 60 * 1000L;
 
     /** 封禁冻结信息 */
     public static class BanFreezeInfo {
@@ -88,6 +90,15 @@ public class ActionExecutor {
             return;
         }
 
+        if (actionId != null) {
+            long now = System.currentTimeMillis();
+            processedActionIds.entrySet().removeIf(entry -> now - entry.getValue() > ACTION_ID_TTL_MS);
+            if (processedActionIds.putIfAbsent(actionId, now) != null) {
+                sendResult(actionId, uuid, action, true, "Duplicate action ignored (idempotent)");
+                return;
+            }
+        }
+
         Bukkit.getScheduler().runTask(plugin, () -> {
             boolean success;
             String resultMsg;
@@ -145,6 +156,7 @@ public class ActionExecutor {
                     resultMsg = "Unknown action: " + action;
                     break;
             }
+            if (!success && actionId != null) processedActionIds.remove(actionId);
             sendResult(actionId, uuid, action, success, resultMsg);
         });
     }
@@ -164,7 +176,7 @@ public class ActionExecutor {
         String playerName = player != null ? player.getName() : uuid.toString();
         Date expiry = durationMs > 0 ? new Date(System.currentTimeMillis() + durationMs) : null;
         String banReason = reason != null ? reason : "Banned by AntiCheat";
-        String durationStr = durationMs > 0 ? String.valueOf(durationMs) : "permanent";
+        String durationStr = formatDurationProtocol(durationMs);
 
         // 使用 OfflinePlayer.ban() 封禁（基于 UUID，防止改用户名绕过）
         @SuppressWarnings("deprecation")
@@ -223,6 +235,24 @@ public class ActionExecutor {
         return days + "天";
     }
 
+    /** 格式化为控制层支持的时长协议，避免裸毫秒被误判为默认封禁时长。 */
+    private String formatDurationProtocol(long durationMs) {
+        if (durationMs <= 0) return "permanent";
+        if (durationMs % (24L * 60 * 60 * 1000) == 0) {
+            return (durationMs / (24L * 60 * 60 * 1000)) + "d";
+        }
+        if (durationMs % (60L * 60 * 1000) == 0) {
+            return (durationMs / (60L * 60 * 1000)) + "h";
+        }
+        if (durationMs % (60L * 1000) == 0) {
+            return (durationMs / (60L * 1000)) + "m";
+        }
+        if (durationMs % 1000L == 0) {
+            return (durationMs / 1000L) + "s";
+        }
+        return String.valueOf(durationMs);
+    }
+
     /** 封禁冻结期间的 ActionBar 定时任务 ID */
     private final Map<UUID, Integer> banActionBarTaskIds = new ConcurrentHashMap<>();
 
@@ -266,10 +296,13 @@ public class ActionExecutor {
             }
         }
 
-        // 使用 OfflinePlayer 解封（基于 UUID 的 ProfileBanList）
-        @SuppressWarnings("deprecation")
-        org.bukkit.OfflinePlayer offline = Bukkit.getOfflinePlayer(uuid);
-        offline.ban(null, (Date) null, null); // 清除封禁
+        // 按 UUID 字符串从 ProfileBanList 中明确移除。
+        // 不调用 OfflinePlayer.getPlayerProfile()，因为 Paper 与 Spigot 1.20.1 的返回类型签名不兼容。
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        BanList profileBans = Bukkit.getBanList(BanList.Type.PROFILE);
+        if (profileBans.isBanned(uuid.toString())) {
+            profileBans.pardon(uuid.toString());
+        }
 
         // 同时解除 NAME 封禁
         if (playerName != null) {

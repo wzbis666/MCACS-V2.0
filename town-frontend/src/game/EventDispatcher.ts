@@ -142,6 +142,9 @@ export class EventDispatcher {
       case 'vp_update':
         this.scene.onVPUpdate((event as any).playerId, (event as any).totalVP, (event as any).vpByType)
         break
+      case 'investigation_case':
+        this.scene.onInvestigationCase({ ...event, id: event.caseId })
+        break
       case 'penalty':
         this.scene.onPenaltyEvent(event as any)
         break

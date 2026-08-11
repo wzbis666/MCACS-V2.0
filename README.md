@@ -1,4 +1,8 @@
 # MCACS V2.0 — Minecraft Anti-Cheat System
+[![CI](https://github.com/wzbis666/MCACS-V2.0/actions/workflows/ci.yml/badge.svg)](https://github.com/wzbis666/MCACS-V2.0/actions/workflows/ci.yml)
+[![GitHub release](https://img.shields.io/github/v/release/wzbis666/MCACS-V2.0)](https://github.com/wzbis666/MCACS-V2.0/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 ![MCACS 3D监控面板概览](docs/images/overview.png)
 
 ---
@@ -146,41 +150,46 @@ MCACS 的 3D 面板不是为了炫技——它让管理员在**不阅读任何�
 
 ## 快速开始
 
-### Docker 部署（推荐，30 秒启动）
+### Linux 一键安装（推荐）
 
 ```bash
-git clone https://github.com/wzbis666/MCACS-V2.0.git
-cd MCACS-V2.0
+curl -fLO https://github.com/wzbis666/MCACS-V2.0/releases/latest/download/install.sh
+sudo bash install.sh --minecraft-dir /path/to/paper-server
+```
 
-# 配置环境变量（可选但推荐）
+安装器会校验下载文件、生成认证密钥、启动预构建容器，并把 Paper 插件复制到 `plugins/`。无需安装 Node.js、Java 或 Maven；只需要 Docker 与 Docker Compose。
+
+### Windows 一键安装
+
+```powershell
+Invoke-WebRequest https://github.com/wzbis666/MCACS-V2.0/releases/latest/download/install.ps1 -OutFile install.ps1
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -MinecraftDir "C:\Minecraft\Paper"
+```
+
+Windows 安装方式需要 Docker Desktop。已有 `.env`、插件配置与处罚配置不会被覆盖。
+
+### 仅使用 Docker Compose
+
+```bash
+mkdir mcacs && cd mcacs
+curl -fLO https://github.com/wzbis666/MCACS-V2.0/releases/latest/download/compose.yml
+curl -fLO https://github.com/wzbis666/MCACS-V2.0/releases/latest/download/penalty-config.yml
+printf 'ACS_AUTH_SECRET=%s\n' "$(openssl rand -hex 32)" > .env
+docker compose -f compose.yml up -d
+```
+
+Paper 插件可从 [最新 Release](https://github.com/wzbis666/MCACS-V2.0/releases/latest/download/MCACS-Paper.jar) 直接下载。将其放入 `plugins/`，并在 `plugins/AntiCheatMonitor/config.yml` 中配置 `ws-uri` 和相同的 `auth-token`。
+
+### 从源码运行
+
+仓库内的 `docker-compose.yml` 保留给开发者本地构建：
+
+```bash
 cp .env.example .env
-
-# 启动
-docker compose up -d
+docker compose up -d --build
 ```
 
-访问 `http://<服务器IP>:55210` 打开监控面板。
-
-### Linux 一键脚本
-
-```bash
-git clone https://github.com/wzbis666/MCACS-V2.0.git
-cd MCACS-V2.0
-sudo bash install.sh
-```
-
-脚本自动完成：系统检测 → 安装 Node.js/Java/Maven → 构建前后端 → 创建 systemd 服务 → 配置防火墙。
-
-### 安装 Paper 插件
-
-```bash
-cd spigot-plugin && mvn clean package -q
-# 将 target/minecraft-anticheat-*.jar 复制到 Minecraft 服务器的 plugins/ 目录
-```
-
-### 详细文档
-
-完整的部署指南、配置说明和故障排查请参阅 [DEPLOY.md](DEPLOY.md)。
+发布版使用 `compose.release.yml` 和 GHCR 预构建镜像。完整的部署、升级、回滚和排障说明见 [DEPLOY.md](DEPLOY.md)，实际支持范围见 [兼容性矩阵](docs/COMPATIBILITY.md)。
 
 ---
 
@@ -215,7 +224,10 @@ MCACS-V2.0/
 │       ├── ws/                  # WebSocket 客户端 (自动重连)
 │       └── executor/            # 处罚执行 (kick · ban · freeze · tp)
 ├── docker-compose.yml           # Docker 编排
-├── install.sh                   # Linux 一键部署脚本
+├── compose.release.yml          # 使用 GHCR 镜像的发布版编排
+├── scripts/                     # Linux / Windows 发布版安装器
+├── .github/workflows/           # CI、GHCR 与 GitHub Release 自动化
+├── install.sh                   # Linux 安装器入口
 ├── penalty-config.yml           # 处罚策略配置 (热重载)
 └── DEPLOY.md                    # 详细部署文档
 ```
@@ -271,11 +283,11 @@ docker compose restart
 
 | 组件 | 最低版本 | 用途 |
 |------|---------|------|
-| Node.js | 20+ | 检测引擎运行环境 |
-| Java | 17+ (OpenJDK) | 编译 Paper 插件 |
-| Maven | 3.6+ | Paper 插件构建 |
-| Minecraft | Paper 1.20.4 | 推荐目标服务端 |
-| Docker | 20.10+ (可选) | 容器化部署 |
+| Docker + Compose | 当前稳定版 | 运行预构建检测引擎 |
+| Java | 17+ | 运行 Paper 插件 |
+| Minecraft | Paper 1.20.x | 当前预期目标系列，详见兼容性矩阵 |
+| Node.js | 20+ | 仅从源码运行检测引擎时需要 |
+| Maven | 3.6+ | 仅从源码构建插件时需要 |
 
 ---
 
@@ -288,6 +300,7 @@ docker compose restart
 ## 贡献
 
 欢迎提交 Issue 和 Pull Request。参与前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
+安全漏洞请按 [SECURITY.md](SECURITY.md) 私下报告，不要公开披露利用细节。
 
 ## 许可证
 

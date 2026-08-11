@@ -11,6 +11,10 @@ import type { AppealManager } from './appeal-manager.js'
 import type { BaselineTracker } from './baseline-tracker.js'
 import type { VerificationGate } from './verification.js'
 import type { WarningTracker } from './warning-tracker.js'
+import type { InvestigationCaseManager } from './investigation-case-manager.js'
+import type { OperationsSummaryManager } from './operations-summary-manager.js'
+import type { EvidenceBufferManager } from './evidence-buffer-manager.js'
+import type { SoftContainmentManager } from './soft-containment-manager.js'
 
 export interface Runtime {
   wsServer: WsServer
@@ -26,6 +30,10 @@ export interface Runtime {
   baselineTracker: BaselineTracker
   verificationGate: VerificationGate
   warningTracker: WarningTracker
+  investigationCaseManager: InvestigationCaseManager
+  operationsSummaryManager: OperationsSummaryManager
+  evidenceBufferManager: EvidenceBufferManager
+  softContainmentManager: SoftContainmentManager
 }
 
 let runtime: Runtime | null = null

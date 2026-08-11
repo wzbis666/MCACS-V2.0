@@ -12,7 +12,6 @@ import type {
 import type { GameEvent } from './game-event.js'
 import type { PlayerStateTracker } from './PlayerStateTracker.js'
 import type { AlertManager } from './AlertManager.js'
-import type { RouteManager } from './RouteManager.js'
 
 const SPEED_ANOMALY_THRESHOLD = 0.8
 const COMBAT_ANOMALY_ANGLE = 90
@@ -37,16 +36,13 @@ const CHEAT_TYPE_TO_BUILDING: Record<CheatType, string> = {
 export class EventTranslator {
   private readonly tracker: PlayerStateTracker
   private readonly alertManager: AlertManager
-  private readonly routeManager: RouteManager
 
   constructor(
     tracker: PlayerStateTracker,
     alertManager: AlertManager,
-    routeManager: RouteManager,
   ) {
     this.tracker = tracker
     this.alertManager = alertManager
-    this.routeManager = routeManager
   }
 
   translate(event: AntiCheatEvent): GameEvent[] {
@@ -115,7 +111,7 @@ export class EventTranslator {
     const npcId = this.tracker.resolveNpcId(event.playerId)
     if (!npcId) return []
 
-    // 使用 exitType 作为主要判断依据（由 Spigot 端权威标记）
+    // Spigot's exitType is authoritative for NPC lifecycle.
     if (event.exitType === 'cheat_ban') {
       // 作弊封禁退出：NPC 不应 despawn，保留在关押区漫游
       // 先标记为 punishing，再转为 offline
@@ -124,12 +120,6 @@ export class EventTranslator {
         { type: 'npc_phase', npcId, phase: 'punishing' },
         { type: 'npc_phase', npcId, phase: 'offline' },
       ]
-    }
-
-    // 兜底防御：即使 exitType=normal，如果 phase 是 punishing，仍保留
-    const phase = this.tracker.getPhase(event.playerId)
-    if (phase === 'punishing') {
-      return [{ type: 'npc_phase', npcId, phase: 'offline' }]
     }
 
     // 正常退出：移除 NPC

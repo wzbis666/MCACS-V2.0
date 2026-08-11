@@ -64,6 +64,10 @@ export class WarningTracker {
     this.secondOffenseBanDuration = duration
   }
 
+  setWarningExpiryMs(durationMs: number): void {
+    this.warningExpiryMs = Math.max(1, durationMs)
+  }
+
   /**
    * 记录一次检测并返回警告决策
    * @returns isFirstWarning=true 表示首次警告，isSecondOffense=true 表示二次违规应立即封禁
@@ -166,6 +170,9 @@ export class WarningTracker {
       state.warningByType = { fly: 0, speed: 0, kill_aura: 0, x_ray: 0, scaffold: 0, auto_clicker: 0, reach: 0 }
       for (const w of state.warnings) {
         state.warningByType[w.cheatType] = (state.warningByType[w.cheatType] ?? 0) + 1
+      }
+      if (state.warnings.length === 0) {
+        state.hasReceivedFirstWarning = false
       }
     }
   }

@@ -2,7 +2,7 @@
 // A permanent NPC with GLB model + skeleton animation that patrols the plaza.
 
 import * as THREE from 'three'
-import type { AssetLoader } from '../scene/AssetLoader.js'
+import { ADMIN_CHARACTER_KEY, type AssetLoader } from '../scene/AssetLoader.js'
 import type { NPCManager } from './NPCManager.js'
 
 const DEFAULT_POSITION = { x: 18, y: 0, z: 13 }
@@ -73,7 +73,7 @@ export class TownManagerNpc {
     this.group.position.set(DEFAULT_POSITION.x, 0, DEFAULT_POSITION.z)
     this.scene.add(this.group)
 
-    const model = assets.getCharacterModel('character-male-a')
+    const model = assets.getCharacterModel(ADMIN_CHARACTER_KEY)
     if (model) {
       this.applyModel(model)
     } else {
@@ -81,7 +81,7 @@ export class TownManagerNpc {
       this.createFallbackModel()
     }
 
-    this.addBadge()
+    this.addAdminLabel()
     this.pickNextIdleDuration()
   }
 
@@ -178,32 +178,50 @@ export class TownManagerNpc {
     this.modelRoot.add(head)
   }
 
-  private addBadge(): void {
-    const ringMat = new THREE.MeshBasicMaterial({ color: 0x2ecc71, transparent: true, opacity: 0.8 })
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.04, 8, 32), ringMat)
-    ring.rotation.x = Math.PI / 2
-    ring.position.y = 2.2
-    this.group.add(ring)
-
+  private addAdminLabel(): void {
     const canvas = document.createElement('canvas')
-    canvas.width = 128
-    canvas.height = 32
+    canvas.width = 256
+    canvas.height = 72
     const ctx = canvas.getContext('2d')!
-    ctx.fillStyle = 'rgba(0,0,0,0.7)'
+
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.55)'
+    ctx.shadowBlur = 12
+    ctx.shadowOffsetY = 4
+    const background = ctx.createLinearGradient(0, 8, 0, 64)
+    background.addColorStop(0, 'rgba(24, 38, 61, 0.96)')
+    background.addColorStop(1, 'rgba(8, 17, 32, 0.96)')
+    ctx.fillStyle = background
     ctx.beginPath()
-    ctx.roundRect(2, 2, 124, 28, 6)
+    ctx.roundRect(8, 8, 240, 52, 12)
     ctx.fill()
-    ctx.font = 'bold 14px sans-serif'
-    ctx.fillStyle = '#2ecc71'
+
+    ctx.shadowColor = 'transparent'
+    ctx.shadowBlur = 0
+    ctx.shadowOffsetY = 0
+    ctx.strokeStyle = 'rgba(232, 190, 103, 0.9)'
+    ctx.lineWidth = 2
+    ctx.stroke()
+
+    ctx.beginPath()
+    ctx.roundRect(12, 12, 232, 44, 9)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)'
+    ctx.lineWidth = 1
+    ctx.stroke()
+
+    ctx.font = '600 24px "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif'
+    ctx.fillStyle = '#f7f3e8'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText('管理员', 64, 16)
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.75)'
+    ctx.shadowBlur = 4
+    ctx.shadowOffsetY = 2
+    ctx.fillText('管理员', 128, 34)
 
     const texture = new THREE.CanvasTexture(canvas)
     const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false })
     const sprite = new THREE.Sprite(spriteMat)
-    sprite.position.y = 2.6
-    sprite.scale.set(1.2, 0.3, 1)
+    sprite.position.y = 2.3
+    sprite.scale.set(1.5, 0.42, 1)
     this.group.add(sprite)
   }
 

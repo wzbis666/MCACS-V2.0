@@ -7,6 +7,7 @@
 
 export type CheatType = 'fly' | 'speed' | 'kill_aura' | 'x_ray' | 'scaffold' | 'auto_clicker' | 'reach'
 export type Confidence = 'low' | 'medium' | 'high'
+export type GrimSignalSeverity = 'standard' | 'high'
 export type ActionType = 'kick' | 'ban' | 'unban' | 'whitelist_add' | 'whitelist_remove' | 'teleport' | 'freeze' | 'warning' | 'persistent_warning' | 'vp_update'
 export type PlayerPhase = 'normal' | 'suspicious' | 'investigating' | 'confirmed' | 'punishing' | 'monitoring' | 'offline'
 
@@ -15,6 +16,14 @@ export interface Evidence {
   value: number
   threshold: number
   duration: number // ms
+}
+
+export interface NearbyOreContext {
+  type: string
+  dx: number
+  dy: number
+  dz: number
+  exposed: boolean
 }
 
 export interface CheatDetection {
@@ -38,14 +47,15 @@ export type AntiCheatEvent =
   | { type: 'player.leave'; playerId: string; reason: string; exitType: ExitType }
 
   // Player data
-  | { type: 'player.move'; playerId: string; x: number; y: number; z: number; vx: number; vy: number; vz: number; onGround: boolean }
+  | { type: 'player.move'; playerId: string; x: number; y: number; z: number; vx: number; vy: number; vz: number; onGround: boolean; ping?: number; statusEffects?: string[]; exemptions?: string[] }
   | { type: 'player.combat'; attackerId: string; victimId: string; distance: number; angle: number; cps: number; hasLos: boolean }
-  | { type: 'player.block'; playerId: string; action: 'break' | 'place'; blockType: string; speed: number }
+  | { type: 'player.block'; playerId: string; action: 'break' | 'place'; blockType: string; speed: number; x?: number; y?: number; z?: number; exposedFaces?: number; nearbyOres?: NearbyOreContext[]; yaw?: number; pitch?: number; placedFace?: string; placementIntervalMs?: number }
   | { type: 'player.action'; playerId: string; action: string; state: boolean }
   | { type: 'player.gamemode'; playerId: string; oldMode: string; newMode: string }
 
   // Detection
   | { type: 'detection'; playerId: string; cheatType: CheatType; confidence: Confidence; evidence: Evidence[] }
+  | { type: 'grim.violation'; playerId: string; name: string; checkName: string; violationLevel: number; severity: GrimSignalSeverity; threshold: number; timestamp: number }
 
   // Action execution
   | { type: 'action_executed'; playerId: string; action: ActionType; actionId?: string; result: string }
