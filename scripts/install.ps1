@@ -69,8 +69,8 @@ MCACS_VERSION=$imageVersion
 ACS_AUTH_SECRET=$authSecret
 ACS_HTTP_PORT=55210
 ACS_WS_PORT=55211
-ACS_MODE=monitor
-ACS_PRESET=balanced
+ACS_MODE=dashboard
+ACS_PRESET=survival
 TZ=Asia/Shanghai
 "@ | Set-Content -Encoding ASCII $envFile
     } else {

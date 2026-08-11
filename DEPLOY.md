@@ -86,8 +86,8 @@ MCACS_VERSION=latest
 ACS_AUTH_SECRET=replace-with-output-from-openssl
 ACS_HTTP_PORT=55210
 ACS_WS_PORT=55211
-ACS_MODE=monitor
-ACS_PRESET=balanced
+ACS_MODE=dashboard
+ACS_PRESET=survival
 TZ=Asia/Shanghai
 ```
 

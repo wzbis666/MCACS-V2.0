@@ -1,6 +1,6 @@
 {
   "name": "minecraft-anticheat",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Minecraft Paper anti-cheat monitoring system with 3D visualization",
   "main": "./src/plugin/index.ts",
   "type": "module",
