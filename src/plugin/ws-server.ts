@@ -3,7 +3,7 @@ import type { AntiCheatEvent, SpigotAction, SpigotMessage } from '../contracts/i
 import { translateSpigotMessage } from './event-translator.js'
 
 const PORT = 55211
-const HOST = process.env.ACS_WS_HOST ?? '0.0.0.0'
+const HOST = process.env.ACS_WS_HOST ?? '127.0.0.1'
 const HEARTBEAT_INTERVAL = 30_000
 const AUTH_SECRET = process.env.ACS_AUTH_SECRET ?? null
 
@@ -80,12 +80,13 @@ export class WsServer {
     }
   }
 
-  sendToSpigot(action: SpigotAction): void {
+  sendToSpigot(action: SpigotAction): boolean {
     if (!this.spigotWs || this.spigotWs.readyState !== WebSocket.OPEN) {
       console.warn('[WsServer] Spigot not connected, cannot send action:', action.type)
-      return
+      return false
     }
     this.spigotWs.send(JSON.stringify(action))
+    return true
   }
 
   broadcastEvent(event: AntiCheatEvent): void {

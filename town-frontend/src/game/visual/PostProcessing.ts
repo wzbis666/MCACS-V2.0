@@ -34,10 +34,6 @@ export class PostProcessing {
     this.composer.setSize(width, height)
   }
 
-  setBloomStrength(strength: number): void {
-    this.bloomPass.strength = strength
-  }
-
   dispose(): void {
     this.composer.dispose()
   }

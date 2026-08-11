@@ -30,9 +30,8 @@
 1. Fork 本仓库
 2. 创建功能分支: `git checkout -b feature/your-feature`
 3. 编写代码并测试
-4. 确保 TypeScript 编译通过: `npx tsc --noEmit`
-5. 提交前运行 lint: `npx eslint src/`
-6. 提交 PR，描述变更内容和原因
+4. 运行下方完整验证命令
+5. 提交 PR，描述变更内容和原因
 
 ### 代码规范
 
@@ -58,15 +57,16 @@
 ### 测试
 
 ```bash
-# 运行单元测试
+npm ci
+npm ci --prefix town-frontend
 npm test
-
-# 编译检查
-npx tsc --noEmit
-
-# 前端编译检查
-cd town-frontend && npx tsc --noEmit
+npm run build
+npm run build:paper
+npm --prefix town-frontend run build
+git diff --check
 ```
+
+涉及 Docker 或部署流程时，还应执行 `docker build -t mcacs:local .`，并验证 `/api/health`、Paper WebSocket 连接和数据持久化。
 
 ## 项目结构
 

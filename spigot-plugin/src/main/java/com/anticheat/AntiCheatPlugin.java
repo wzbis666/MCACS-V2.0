@@ -13,6 +13,7 @@ import com.anticheat.ws.WebSocketClient;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.ConsoleCommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.json.simple.JSONObject;
@@ -51,7 +52,7 @@ public class AntiCheatPlugin extends JavaPlugin {
     public void onEnable() {
         saveDefaultConfig();
         wsUri = buildWsUri();
-        sampleIntervalMs = getConfig().getLong("sample-interval", 250L);
+        sampleIntervalMs = Math.max(50L, getConfig().getLong("sample-interval", 50L));
         movementTracker = new MovementTracker();
         combatTracker = new CombatTracker();
         blockTracker = new BlockTracker();
@@ -122,6 +123,13 @@ public class AntiCheatPlugin extends JavaPlugin {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!command.getName().equalsIgnoreCase("anticheat")) return false;
+
+        // Internal bridge used only by Grim's console punishment commands.
+        // Keep it before the admin permission check so the console can always relay signals.
+        if (args.length > 0 && args[0].equalsIgnoreCase("grim-signal")) {
+            return handleGrimSignal(sender, args);
+        }
+
         if (!sender.hasPermission("anticheat.admin")) {
             sender.sendMessage("§cYou don't have permission to use this command.");
             return true;
@@ -136,13 +144,52 @@ public class AntiCheatPlugin extends JavaPlugin {
             case "reload" -> {
                 reloadConfig();
                 wsUri = buildWsUri();
-                sampleIntervalMs = getConfig().getLong("sample-interval", 250L);
+                sampleIntervalMs = Math.max(50L, getConfig().getLong("sample-interval", 50L));
                 wsClient.disconnect();
                 wsClient.connect();
                 sender.sendMessage("§a[AntiCheat] WebSocket reconnected.");
             }
             case "status" -> sendStatus(sender);
             default -> sender.sendMessage("§cUsage: /anticheat <reload|status>");
+        }
+        return true;
+    }
+
+    private boolean handleGrimSignal(CommandSender sender, String[] args) {
+        if (!(sender instanceof ConsoleCommandSender)) {
+            sender.sendMessage("§c[AntiCheat] grim-signal is an internal console command.");
+            return true;
+        }
+        if (args.length != 6) {
+            getLogger().warning("Invalid Grim signal. Expected: grim-signal <player> <check> <vl> <standard|high> <threshold>");
+            return true;
+        }
+
+        Player player = Bukkit.getPlayerExact(args[1]);
+        if (player == null) {
+            getLogger().warning("Ignoring Grim signal for offline player: " + args[1]);
+            return true;
+        }
+
+        String severity = args[4].toLowerCase();
+        if (!severity.equals("standard") && !severity.equals("high")) {
+            getLogger().warning("Ignoring Grim signal with invalid severity: " + args[4]);
+            return true;
+        }
+
+        try {
+            double violationLevel = Double.parseDouble(args[3]);
+            double threshold = Double.parseDouble(args[5]);
+            wsClient.send(MessageProtocol.grimViolation(
+                    player.getUniqueId(),
+                    player.getName(),
+                    args[2],
+                    violationLevel,
+                    severity,
+                    threshold
+            ));
+        } catch (NumberFormatException exception) {
+            getLogger().warning("Ignoring Grim signal with invalid numeric value: " + exception.getMessage());
         }
         return true;
     }

@@ -1,0 +1,52 @@
+name: Bug report
+description: Report a reproducible MCACS problem
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Please remove secrets, player IP addresses, and other private data from logs.
+  - type: input
+    id: version
+    attributes:
+      label: MCACS version
+      description: Release tag or container image tag
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installation method
+      options:
+        - Docker Compose release
+        - Linux installer
+        - Windows installer
+        - Source build
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, CPU architecture, Java version, Paper/Spigot version, and browser
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      render: shell

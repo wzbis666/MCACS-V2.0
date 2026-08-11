@@ -28,7 +28,8 @@ RUN npm prune --omit=dev
 FROM node:20-bookworm-slim
 LABEL org.opencontainers.image.title="Minecraft AntiCheat"
 LABEL org.opencontainers.image.description="Minecraft Paper anti-cheat monitoring system with 3D visualization"
-LABEL org.opencontainers.image.version="0.1.0"
+LABEL org.opencontainers.image.source="https://github.com/wzbis666/MCACS-V2.0"
+LABEL org.opencontainers.image.licenses="MIT"
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends tini \
@@ -52,6 +53,7 @@ EXPOSE 55211 55210
 ENV NODE_ENV=production
 ENV ACS_AUTH_SECRET=""
 ENV ACS_HTTP_HOST=0.0.0.0
+ENV ACS_WS_HOST=0.0.0.0
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "dist/plugin/index.js"]

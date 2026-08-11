@@ -1,6 +1,9 @@
 package com.anticheat.listener;
 
 import java.util.Map;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Set;
 import java.util.UUID;
 import com.anticheat.AntiCheatPlugin;
 import com.anticheat.executor.ActionExecutor;
@@ -8,6 +11,7 @@ import com.anticheat.tracker.BlockTracker;
 import com.anticheat.ws.MessageProtocol;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -16,14 +20,31 @@ import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.json.simple.JSONObject;
 
 public class BlockListener implements Listener {
+
+    private static final int ORE_SCAN_RADIUS = 4;
+    private static final int MAX_NEARBY_ORES = 32;
+    private static final Set<Material> ORE_TYPES = Set.of(
+            Material.DIAMOND_ORE, Material.DEEPSLATE_DIAMOND_ORE,
+            Material.EMERALD_ORE, Material.DEEPSLATE_EMERALD_ORE,
+            Material.GOLD_ORE, Material.DEEPSLATE_GOLD_ORE,
+            Material.IRON_ORE, Material.DEEPSLATE_IRON_ORE,
+            Material.LAPIS_ORE, Material.DEEPSLATE_LAPIS_ORE,
+            Material.REDSTONE_ORE, Material.DEEPSLATE_REDSTONE_ORE,
+            Material.ANCIENT_DEBRIS);
+    private static final BlockFace[] ADJACENT_FACES = {
+            BlockFace.UP, BlockFace.DOWN, BlockFace.NORTH,
+            BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST
+    };
 
     private final AntiCheatPlugin plugin;
     private final BlockTracker tracker;
     private final ActionExecutor executor;
 
     private final Map<UUID, Long> breakStartTimes = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<UUID, Long> lastPlacementTimes = new java.util.concurrent.ConcurrentHashMap<>();
 
     public BlockListener(AntiCheatPlugin plugin) {
         this.plugin = plugin;
@@ -51,11 +72,16 @@ public class BlockListener implements Listener {
         tracker.recordBreak(uuid, material.name(), hardness, breakTimeMs);
 
         String sequence = tracker.getBreakSequence(uuid);
+        int exposedFaces = countExposedFaces(block);
+        List<JSONObject> nearbyOres = scanNearbyOres(block);
 
         String message = MessageProtocol.playerBlock(
                 uuid, "break", material.name(),
                 breakTimeMs > 0 ? hardness / (breakTimeMs / 1000.0) : 0,
-                sequence
+                sequence,
+                block.getX(), block.getY(), block.getZ(),
+                exposedFaces, nearbyOres,
+                player.getLocation().getYaw(), player.getLocation().getPitch(), "", 0L
         );
         plugin.getWebSocketClient().send(message);
     }
@@ -89,13 +115,52 @@ public class BlockListener implements Listener {
         tracker.recordPlace(uuid, material.name());
 
         String sequence = tracker.getBreakSequence(uuid);
+        long placedAt = System.currentTimeMillis();
+        long placementIntervalMs = lastPlacementTimes.containsKey(uuid)
+                ? placedAt - lastPlacementTimes.get(uuid) : 0L;
+        lastPlacementTimes.put(uuid, placedAt);
+        BlockFace placedFace = event.getBlockPlaced().getFace(event.getBlockAgainst());
 
         String message = MessageProtocol.playerBlock(
                 uuid, "place", material.name(),
                 tracker.getPlaceSpeed(uuid),
-                sequence
+                sequence,
+                event.getBlock().getX(), event.getBlock().getY(), event.getBlock().getZ(),
+                countExposedFaces(event.getBlock()), List.of(),
+                player.getLocation().getYaw(), player.getLocation().getPitch(),
+                placedFace == null ? "UNKNOWN" : placedFace.name(), placementIntervalMs
         );
         plugin.getWebSocketClient().send(message);
+    }
+
+    private int countExposedFaces(Block block) {
+        int exposed = 0;
+        for (BlockFace face : ADJACENT_FACES) {
+            if (block.getRelative(face).getType().isAir()) exposed++;
+        }
+        return exposed;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<JSONObject> scanNearbyOres(Block origin) {
+        List<JSONObject> ores = new ArrayList<>();
+        for (int dx = -ORE_SCAN_RADIUS; dx <= ORE_SCAN_RADIUS; dx++) {
+            for (int dy = -ORE_SCAN_RADIUS; dy <= ORE_SCAN_RADIUS; dy++) {
+                for (int dz = -ORE_SCAN_RADIUS; dz <= ORE_SCAN_RADIUS; dz++) {
+                    if (ores.size() >= MAX_NEARBY_ORES) return ores;
+                    Block candidate = origin.getRelative(dx, dy, dz);
+                    if (!ORE_TYPES.contains(candidate.getType())) continue;
+                    JSONObject ore = new JSONObject();
+                    ore.put("type", candidate.getType().name());
+                    ore.put("dx", dx);
+                    ore.put("dy", dy);
+                    ore.put("dz", dz);
+                    ore.put("exposed", countExposedFaces(candidate) > 0);
+                    ores.add(ore);
+                }
+            }
+        }
+        return ores;
     }
 
     private double getHardness(Material material) {

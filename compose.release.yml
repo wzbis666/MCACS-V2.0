@@ -1,0 +1,33 @@
+name: mcacs
+
+services:
+  anticheat-engine:
+    image: ghcr.io/wzbis666/mcacs:${MCACS_VERSION:-latest}
+    container_name: mcacs-engine
+    restart: unless-stopped
+    ports:
+      - "${ACS_HTTP_PORT:-55210}:55210"
+      - "${ACS_WS_PORT:-55211}:55211"
+    environment:
+      NODE_ENV: production
+      ACS_AUTH_SECRET: ${ACS_AUTH_SECRET:?Set ACS_AUTH_SECRET in .env}
+      ACS_HTTP_HOST: 0.0.0.0
+      ACS_WS_HOST: 0.0.0.0
+      ACS_MODE: ${ACS_MODE:-monitor}
+      ACS_PRESET: ${ACS_PRESET:-balanced}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ./data:/app/data
+      - ./penalty-config.yml:/app/penalty-config.yml:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:55210/api/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

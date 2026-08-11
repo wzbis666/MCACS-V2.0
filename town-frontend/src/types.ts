@@ -200,6 +200,116 @@ export interface PenaltyLogEntry {
   timestamp: number
 }
 
+export type InvestigationCaseStatus = 'open' | 'monitoring' | 'confirmed' | 'dismissed'
+export type InvestigationRiskLevel = 'medium' | 'high' | 'critical'
+export type InvestigationDecision = 'confirm' | 'dismiss' | 'monitor'
+
+export interface InvestigationCaseSummary {
+  id: string
+  playerId: string
+  npcId?: string
+  playerName: string
+  status: InvestigationCaseStatus
+  riskLevel: InvestigationRiskLevel
+  riskScore: number
+  confidenceScore: number
+  suspectedCheats: CheatType[]
+  signalCount: number
+  signals?: unknown[]
+  openedAt?: number
+  updatedAt: number
+}
+
+export interface DetectorQualityMetric {
+  reviewedCases: number
+  confirmedCases: number
+  dismissedCases: number
+  confirmationRate: number | null
+}
+
+export interface CaseQualityMetrics {
+  reviewedCases: number
+  confirmedCases: number
+  dismissedCases: number
+  confirmationRate: number | null
+  dismissalRate: number | null
+  averageHandlingTimeMs: number | null
+  byDetector: Partial<Record<CheatType, DetectorQualityMetric>>
+}
+
+export interface OfflineSummary {
+  from: number
+  to: number
+  durationMs: number
+  onlinePeak: number
+  casesOpened: number
+  automaticMeasures: number
+  minTps: number | null
+  hasImportantActivity: boolean
+  pendingCases: number
+  quality: CaseQualityMetrics | null
+}
+
+export interface SemanticEvidenceContext {
+  timestamp: number
+  tps: number
+  ping: number | null
+  statusEffects: string[]
+  exemptions: string[]
+}
+
+export type SemanticEvidenceEvent = SemanticEvidenceContext & ({
+  type: 'movement'
+  x: number; y: number; z: number
+  vx: number; vy: number; vz: number
+  onGround: boolean
+} | {
+  type: 'combat'
+  victimId: string; distance: number; angle: number; cps: number; hasLos: boolean
+} | {
+  type: 'block'
+  action: 'break' | 'place'; blockType: string; speed: number
+  x?: number; y?: number; z?: number; exposedFaces?: number
+  nearbyOres?: Array<{ type: string; dx: number; dy: number; dz: number; exposed: boolean }>
+  yaw?: number; pitch?: number; placedFace?: string; placementIntervalMs?: number
+} | {
+  type: 'action'
+  action: string; state: boolean
+} | {
+  type: 'detection'
+  cheatType: CheatType; confidence: Confidence
+  evidence: Evidence[]
+})
+
+export interface CaseEvidenceSnapshot {
+  version: 1
+  caseId: string
+  playerId: string
+  capturedAt: number
+  windowStart: number
+  windowEnd: number
+  complete: boolean
+  events: SemanticEvidenceEvent[]
+  byteSize: number
+  xrayAnalysis?: {
+    sampleCount: number; valuableHits: number; valuableHitEfficiency: number
+    shortestPathDeviation: number | null; crossSampleAnomaly: number
+    turnCount: number; hiddenOreCount: number; hiddenDirectionMatches: number
+    trajectory: Array<{ x: number; y: number; z: number; timestamp: number; valuable: boolean }>
+    oreContext: Array<{ type: string; x: number; y: number; z: number; exposed: boolean }>
+    comparison: { normal: string; suspicious: string }
+  } | null
+  physicsAnalysis?: {
+    exceededFrames: number; exemptedFrames: number
+    frames: Array<{ timestamp: number; actualHorizontalSpeed: number; legalHorizontalSpeed: number; actualVerticalSpeed: number; legalVerticalMin: number; legalVerticalMax: number; exemptions: string[] }>
+  } | null
+  scaffoldAnalysis?: {
+    sampleCount: number; rapidPlacements: number; averageIntervalMs: number | null
+    downwardLookRatio: number; unusualFaceRatio: number
+    path: Array<{ x: number; y: number; z: number; timestamp: number; yaw: number; pitch: number; placedFace: string }>
+  } | null
+}
+
 export const PENALTY_LEVEL_LABELS: Record<PenaltyLevel, string> = {
   L0: '警告',
   L1: '踢出',

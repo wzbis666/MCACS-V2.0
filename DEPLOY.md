@@ -1,428 +1,259 @@
-# Minecraft AntiCheat System — 部署指南
+# MCACS deployment guide
 
-面向个人服务器管理者的完整部署文档。支持 **Docker 一键部署** 和 **Linux 脚本一键部署** 两种方式。
+The supported distribution consists of two release artifacts:
 
----
+- `ghcr.io/wzbis666/mcacs:<version>`: detection engine and monitoring panel.
+- `MCACS-Paper.jar`: Paper data collection and action execution plugin.
 
-## 目录
+Normal server operators should use a tagged release. Building from `main` is intended for contributors.
 
-- [系统架构](#系统架构)
-- [环境要求](#环境要求)
-- [方式一: Docker Compose 一键部署（推荐）](#方式一-docker-compose-一键部署推荐)
-- [方式二: Linux 安装脚本](#方式二-linux-安装脚本)
-- [方式三: 手动部署](#方式三-手动部署)
-- [Minecraft 服务端配置](#minecraft-服务端配置)
-- [部署验证](#部署验证)
-- [配置说明](#配置说明)
-- [常用运维命令](#常用运维命令)
-- [常见问题](#常见问题)
+## Requirements
 
----
+| Component | Requirement |
+| --- | --- |
+| Engine host | 64-bit Linux or Windows with Docker and Docker Compose |
+| CPU | `amd64` or `arm64` |
+| Paper server | Java 17 or newer |
+| Network | TCP 55210 for the panel/API and TCP 55211 for WebSocket |
 
-## 系统架构
+See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) before claiming support for a specific Paper version.
 
-```
-┌─────────────────┐     WebSocket     ┌──────────────────┐     HTTP      ┌──────────────┐
-│  Minecraft 服务器 │ ◄──────────────► │  检测引擎 (Node.js) │ ◄───────────► │  前端监控面板  │
-│  (Paper 插件)    │    port 55211     │  处罚决策 + 数据存储 │   port 55210  │  (3D 可视化)  │
-└─────────────────┘                    └──────────────────┘               └──────────────┘
-```
+## Option 1: Linux installer
 
----
-
-## 环境要求
-
-| 组件 | 最低版本 | 说明 |
-|------|---------|------|
-| 操作系统 | Ubuntu 20.04+ / Debian 11+ / CentOS 7+ | 64 位 |
-| Node.js | 20+ | 检测引擎运行环境 |
-| Java | 17+ | 编译 Paper 插件 |
-| Maven | 3.6+ | 构建 Paper 插件 |
-| Git | 2.0+ | 克隆项目 |
-| Docker (可选) | 20.10+ | 容器化部署 |
-| Minecraft 服务端 | Paper 1.20.4 | 需要安装插件的服务器 |
-
-**端口要求:**
-- `55210` — 前端监控面板 + 管理 API
-- `55211` — WebSocket（Paper 插件与检测引擎通信）
-
----
-
-## 方式一: Docker Compose 一键部署（推荐）
-
-### 1. 克隆项目
+Download the installer from the latest GitHub Release, review it, and run it:
 
 ```bash
-git clone https://github.com/wzbis666/MCACS-V2.0.git
-cd minecraft-anticheat
+curl -fLO https://github.com/wzbis666/MCACS-V2.0/releases/latest/download/install.sh
+less install.sh
+sudo bash install.sh --minecraft-dir /srv/paper
 ```
 
-### 2. 配置环境变量
+The installer:
 
-```bash
-cp .env.example .env
-# 编辑 .env，设置 ACS_AUTH_SECRET（推荐）
-nano .env
+1. Downloads the released Compose file, default policy, Paper JAR, and checksums.
+2. Verifies SHA-256 checksums before installing files.
+3. Generates a unique `ACS_AUTH_SECRET` and stores it in `/opt/mcacs/.env` with restricted permissions.
+4. Pulls the prebuilt container image and waits for the health endpoint.
+5. Copies the JAR and creates the initial Paper plugin configuration when `--minecraft-dir` is supplied.
+
+Useful options:
+
+```text
+--version v0.1.0        install or roll back to a specific release
+--install-dir /srv/mcacs
+--minecraft-dir /srv/paper
+--engine-host 10.0.0.20 address Paper uses to reach the engine
+--no-start              download and configure only
 ```
 
-### 3. 一键启动
+The installer preserves an existing `.env`, Paper plugin configuration, and `penalty-config.yml`. A newer default policy is written to `penalty-config.yml.dist` for manual comparison.
 
-```bash
-# 基础部署（仅检测引擎 + 前端面板）
-docker compose up -d
+## Option 2: Windows installer
 
-# 完整部署（含 Nginx 反向代理，推荐生产环境）
-docker compose --profile full up -d
+Install and start Docker Desktop, then run PowerShell as an administrator:
+
+```powershell
+Invoke-WebRequest https://github.com/wzbis666/MCACS-V2.0/releases/latest/download/install.ps1 -OutFile install.ps1
+Get-Content .\install.ps1
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -MinecraftDir "C:\Minecraft\Paper"
 ```
 
-### 4. 构建 Paper 插件
+To install a specific version:
 
-```bash
-# 在宿主机上构建插件（需要 Java 17 + Maven）
-cd spigot-plugin && mvn clean package -q
-# 插件位于: spigot-plugin/target/minecraft-anticheat-0.1.0.jar
+```powershell
+.\install.ps1 -Version v0.1.0 -MinecraftDir "C:\Minecraft\Paper"
 ```
 
-### 5. 验证运行
+The default engine directory is `%ProgramData%\MCACS`.
+
+## Option 3: Docker Compose
+
+Download the stable release assets:
 
 ```bash
-docker compose ps
-docker compose logs -f anticheat-engine
+mkdir mcacs && cd mcacs
+curl -fLO https://github.com/wzbis666/MCACS-V2.0/releases/latest/download/compose.yml
+curl -fLO https://github.com/wzbis666/MCACS-V2.0/releases/latest/download/penalty-config.yml
+curl -fLO https://github.com/wzbis666/MCACS-V2.0/releases/latest/download/MCACS-Paper.jar
+curl -fLO https://github.com/wzbis666/MCACS-V2.0/releases/latest/download/SHA256SUMS.txt
+sha256sum -c SHA256SUMS.txt --ignore-missing
 ```
 
----
+Create `.env`:
 
-## 方式二: Linux 安装脚本
-
-支持 Ubuntu、Debian、CentOS 的自动化安装。
-
-### 1. 下载并运行脚本
-
-```bash
-# 克隆项目
-git clone https://github.com/wzbis666/MCACS-V2.0.git
-cd minecraft-anticheat
-
-# 以 root 权限运行
-sudo bash install.sh
+```dotenv
+MCACS_VERSION=latest
+ACS_AUTH_SECRET=replace-with-output-from-openssl
+ACS_HTTP_PORT=55210
+ACS_WS_PORT=55211
+ACS_MODE=monitor
+ACS_PRESET=balanced
+TZ=Asia/Shanghai
 ```
 
-脚本会自动完成以下操作:
-1. 检测操作系统类型
-2. 安装 Node.js 20+、Java 17+、Maven、Git
-3. 安装项目依赖并构建前端
-4. 构建 Paper 插件 JAR
-5. 创建 systemd 服务（开机自启）
-6. 配置防火墙规则
-7. 启动服务并验证
-
-### 2. 手动指定仓库地址
+Generate the secret with `openssl rand -hex 32`, then start the engine:
 
 ```bash
-REPO_URL=https://github.com/wzbis666/MCACS-V2.0.git sudo -E bash install.sh
+docker compose --env-file .env -f compose.yml pull
+docker compose --env-file .env -f compose.yml up -d
+docker compose --env-file .env -f compose.yml ps
 ```
 
----
+For reproducible production deployments, replace `latest` with a release number such as `0.1.0`.
 
-## 方式三: 手动部署
+## Configure the Paper plugin
 
-### 1. 安装依赖
+Copy `MCACS-Paper.jar` into the Paper server's `plugins` directory and start Paper once. Edit `plugins/AntiCheatMonitor/config.yml`:
 
-**Ubuntu/Debian:**
-```bash
-sudo apt update
-sudo apt install -y git nodejs npm openjdk-17-jdk-headless maven
+```yaml
+ws-uri: "ws://127.0.0.1:55211/spigot"
+auth-token: "the-same-value-as-ACS_AUTH_SECRET"
+server-name: "main-server"
+sample-interval: 50
 ```
 
-**CentOS/RHEL:**
-```bash
-sudo yum install -y git nodejs npm java-17-openjdk-headless maven
+Use the engine host's private IP instead of `127.0.0.1` when Paper and Docker run on different machines. Restart Paper after changing the plugin JAR or connection configuration. Avoid `/reload` for plugin upgrades.
+
+Run `/anticheat status` in the Paper console or as an authorized operator. The status should report a connected WebSocket.
+
+## Open the monitoring panel
+
+The panel URL is:
+
+```text
+http://ENGINE_HOST:55210/?token=ACS_AUTH_SECRET
 ```
 
-### 2. 克隆并安装项目
+The token is shared with the Paper plugin. Keep it private and avoid exposing the panel directly to the public internet. Prefer a firewall allowlist, VPN, or HTTPS reverse proxy.
+
+## Verify a deployment
 
 ```bash
-git clone https://github.com/wzbis666/MCACS-V2.0.git /opt/minecraft-anticheat
-cd /opt/minecraft-anticheat
+curl --fail http://127.0.0.1:55210/api/health
+docker compose --env-file .env -f compose.yml ps
+docker compose --env-file .env -f compose.yml logs --tail=100 anticheat-engine
+```
 
-# 安装后端依赖
-npm install
+Also verify:
 
-# 构建后端
+- `/anticheat status` reports connected.
+- A test player's join and movement events appear in the panel.
+- `data/` receives persistent records.
+- Restarting the container does not remove records or custom policy settings.
+
+## Upgrade
+
+Back up the persistent files first:
+
+```bash
+cd /opt/mcacs
+tar -czf "mcacs-backup-$(date +%Y%m%d-%H%M%S).tar.gz" data .env penalty-config.yml
+```
+
+With the installer:
+
+```bash
+sudo bash install.sh --version v0.2.0 --minecraft-dir /srv/paper
+```
+
+With Compose, update `MCACS_VERSION`, then run:
+
+```bash
+docker compose --env-file .env -f compose.yml pull
+docker compose --env-file .env -f compose.yml up -d
+```
+
+Restart Paper after replacing `MCACS-Paper.jar`. Compare `penalty-config.yml.dist` with the active policy instead of overwriting local policy changes.
+
+## Roll back
+
+Use the installer with the previous tag, or set `MCACS_VERSION` to the previous image version. Restore the matching Paper JAR from that GitHub Release:
+
+```bash
+sudo bash install.sh --version v0.1.0 --minecraft-dir /srv/paper
+```
+
+Restore the `data` backup if release notes identify a non-backward-compatible data migration.
+
+## Build from source
+
+Contributor requirements are Node.js 20, Java 17, Maven 3.6 or newer, and Docker for the container build.
+
+```bash
+npm ci
+npm ci --prefix town-frontend
+npm test
 npm run build
-
-# 构建前端
-cd town-frontend
-npm install
-npx vite build --outDir dist
-cd ..
+npm run build:paper
+npm --prefix town-frontend run build
+docker compose up -d --build
 ```
 
-### 3. 构建 Paper 插件
+Source builds use `docker-compose.yml`. Released deployments use `compose.release.yml` or the `compose.yml` attached to a GitHub Release.
+
+## Release process for maintainers
+
+1. Update the version in both `package.json`/lock files, both frontend package files, `spigot-plugin/pom.xml`, and `spigot-plugin/src/main/resources/plugin.yml`.
+2. Run `node scripts/check-release-version.mjs 0.2.0` and the complete local verification gate.
+3. Commit and push the release changes.
+4. Create and push a signed or annotated semantic-version tag such as `v0.2.0`.
+
+The Release workflow verifies version consistency, runs all tests and builds, publishes `linux/amd64` and `linux/arm64` images to GHCR, and creates a GitHub Release containing:
+
+```text
+MCACS-Paper.jar
+compose.yml
+penalty-config.yml
+install.sh
+install.ps1
+SHA256SUMS.txt
+```
+
+After the first image publish, open the `mcacs` package settings on GitHub, link it to this repository if necessary, and set package visibility to **Public**. The public installers cannot pull a private GHCR image.
+
+## Operations
 
 ```bash
-cd spigot-plugin
-mvn clean package -q
-# 插件输出: target/minecraft-anticheat-0.1.0.jar
-cd ..
+# Status
+docker compose --env-file .env -f compose.yml ps
+
+# Logs
+docker compose --env-file .env -f compose.yml logs -f anticheat-engine
+
+# Restart
+docker compose --env-file .env -f compose.yml restart anticheat-engine
+
+# Stop without deleting persistent data
+docker compose --env-file .env -f compose.yml down
 ```
 
-### 4. 创建 systemd 服务
+Persistent runtime records are stored in the local `data/` directory. `penalty-config.yml` is mounted read-only and is watched by the engine for policy reloads.
+
+## Troubleshooting
+
+### Paper cannot connect
+
+- Confirm the container environment contains `ACS_WS_HOST=0.0.0.0`.
+- Confirm TCP 55211 is reachable from the Paper host.
+- Confirm `ws-uri` ends with `/spigot`.
+- Confirm `auth-token` exactly matches `ACS_AUTH_SECRET`.
+- Check `docker compose logs anticheat-engine` for authentication or connection errors.
+
+### The panel cannot connect
+
+- Open the panel with the `token` query parameter.
+- Confirm TCP 55210 and 55211 are reachable from the browser.
+- When using HTTPS, proxy both HTTP and WebSocket traffic and configure TLS consistently to avoid mixed-content blocking.
+
+### The engine is unhealthy
 
 ```bash
-sudo tee /etc/systemd/system/minecraft-anticheat.service << 'EOF'
-[Unit]
-Description=Minecraft AntiCheat Monitoring System
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/minecraft-anticheat
-ExecStart=/usr/bin/node /opt/minecraft-anticheat/dist/plugin/index.js
-Restart=always
-RestartSec=5
-Environment=NODE_ENV=production
-Environment=ACS_HTTP_HOST=0.0.0.0
-Environment=TZ=Asia/Shanghai
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now minecraft-anticheat
+docker compose --env-file .env -f compose.yml logs --tail=200 anticheat-engine
+curl -v http://127.0.0.1:55210/api/health
 ```
 
-### 5. 配置防火墙
+Common causes are occupied host ports, a directory accidentally created at `penalty-config.yml`, or insufficient write permission for `data/`.
 
-```bash
-# UFW
-sudo ufw allow 55210/tcp
-sudo ufw allow 55211/tcp
+### Report a problem
 
-# 或 Firewalld
-sudo firewall-cmd --permanent --add-port=55210/tcp
-sudo firewall-cmd --permanent --add-port=55211/tcp
-sudo firewall-cmd --reload
-```
-
----
-
-## Minecraft 服务端配置
-
-### 1. 安装插件
-
-将构建好的 JAR 文件复制到 Minecraft 服务器的 `plugins/` 目录:
-
-```bash
-cp spigot-plugin/target/minecraft-anticheat-0.1.0.jar /path/to/minecraft/plugins/
-```
-
-### 2. 配置插件连接地址
-
-插件首次启动后会在 `plugins/AntiCheatMonitor/` 目录生成配置文件。编辑 `config.yml`:
-
-```yaml
-# WebSocket 连接地址（指向检测引擎）
-ws-uri: "ws://localhost:55211/spigot"
-
-# 如果检测引擎在其他服务器上，改为对应 IP
-# ws-uri: "ws://192.168.1.100:55211/spigot"
-
-# 如果设置了 ACS_AUTH_SECRET，填写相同值
-auth-token: ""
-```
-
-### 3. 重启 Minecraft 服务器
-
-```bash
-# 在 Minecraft 服务器控制台执行
-reload confirm
-# 或重启整个服务器
-```
-
----
-
-## 部署验证
-
-### 1. 检查服务状态
-
-```bash
-# Docker 方式
-docker compose ps
-
-# 或 systemd 方式
-systemctl status minecraft-anticheat
-```
-
-### 2. 检查端口监听
-
-```bash
-ss -tlnp | grep -E "55210|55211"
-```
-
-预期输出应显示两个端口都在监听。
-
-### 3. 访问监控面板
-
-浏览器打开 `http://<服务器IP>:55210`，应看到 3D 城镇监控界面。
-
-### 4. 检查 WebSocket 连接
-
-在 Minecraft 服务器控制台执行:
-
-```
-anticheat status
-```
-
-应显示 WebSocket 连接状态为 `CONNECTED`。
-
-### 5. 查看日志
-
-```bash
-# Docker
-docker compose logs -f anticheat-engine
-
-# systemd
-journalctl -u minecraft-anticheat -f
-```
-
-正常日志应包含:
-```
-[WsServer] Listening on ws://localhost:55211
-[Main] Minecraft Anti-Cheat system started
-[WsServer] Spigot connected
-```
-
----
-
-## 配置说明
-
-### 处罚策略配置
-
-编辑 `penalty-config.yml` 可自定义处罚策略，支持热重载（修改后自动生效，无需重启）:
-
-```yaml
-penalty:
-  enabled: true              # 总开关
-  vp:
-    weights:
-      low: 1                 # 低置信度 VP 增量
-      medium: 3              # 中置信度 VP 增量
-      high: 8                # 高置信度 VP 增量
-    type_multipliers:        # 各作弊类型 VP 倍率
-      kill_aura: 1.5
-      fly: 1.2
-      speed: 1.2
-  thresholds:
-    L0_warn: 5               # 警告阈值
-    L1_kick: 15              # 踢出阈值
-    L2_ban_1h: 30            # 1小时封禁
-    L3_ban_24h: 60           # 24小时封禁
-    L4_ban_7d: 100           # 7天封禁
-    L5_ban_permanent: 150    # 永久封禁
-```
-
-### 安全密钥
-
-设置 `ACS_AUTH_SECRET` 后，WebSocket 与管理 API 都需要携带此 token:
-
-```bash
-echo "ACS_AUTH_SECRET=$(openssl rand -hex 32)" >> .env
-```
-
-然后在 Paper 插件配置中填写相同的 token。
-
----
-
-## 常用运维命令
-
-| 操作 | 命令 |
-|------|------|
-| 启动服务 | `sudo systemctl start minecraft-anticheat` |
-| 停止服务 | `sudo systemctl stop minecraft-anticheat` |
-| 重启服务 | `sudo systemctl restart minecraft-anticheat` |
-| 查看状态 | `sudo systemctl status minecraft-anticheat` |
-| 实时日志 | `sudo journalctl -u minecraft-anticheat -f` |
-| 开机自启 | `sudo systemctl enable minecraft-anticheat` |
-| Docker 启动 | `docker compose up -d` |
-| Docker 停止 | `docker compose down` |
-| Docker 日志 | `docker compose logs -f` |
-| 更新项目 | `cd /opt/minecraft-anticheat && git pull && npm install` |
-| 重建插件 | `cd spigot-plugin && mvn clean package -q` |
-
----
-
-## 常见问题
-
-### Q: 监控面板显示"未连接"
-
-**原因:** 检测引擎未启动或端口被防火墙阻止。
-
-**解决:**
-```bash
-# 检查服务状态
-sudo systemctl status minecraft-anticheat
-# 检查端口
-ss -tlnp | grep 55210
-# 检查防火墙
-sudo ufw status
-```
-
-### Q: Paper 插件连接失败
-
-**原因:** 检测引擎地址配置错误或网络不通。
-
-**解决:**
-1. 检查 `plugins/AntiCheatMonitor/config.yml` 中的 `host` 和 `port`
-2. 确保检测引擎的 55211 端口可被 Minecraft 服务器访问
-3. 如果设置了 `ACS_AUTH_SECRET`，确保插件配置中填写了相同的 token
-
-### Q: 服务启动后立即退出
-
-**解决:**
-```bash
-# 查看详细日志
-sudo journalctl -u minecraft-anticheat -n 100 --no-pager
-# 常见原因: 端口被占用、Node.js 版本过低、依赖未安装
-```
-
-### Q: 端口被占用
-
-**解决:**
-```bash
-# 查看占用端口的进程
-sudo ss -tlnp | grep 55211
-# 修改端口（编辑 src/plugin/ws-server.ts 中的 PORT 常量）
-```
-
-### Q: 如何更新到最新版本
-
-```bash
-cd /opt/minecraft-anticheat
-git pull
-npm install
-cd town-frontend && npm install && npx vite build --outDir dist && cd ..
-cd spigot-plugin && mvn clean package -q && cd ..
-sudo systemctl restart minecraft-anticheat
-# 将新的 JAR 复制到 Minecraft 服务器 plugins/ 目录
-```
-
-### Q: 数据存储在哪里
-
-所有数据存储在 `/opt/minecraft-anticheat/data/` 目录:
-- `cheat-records.sqlite` — 作弊检测查询库（SQLite WAL）
-- `cheat-records.jsonl` — 作弊检测审计日志
-- `bans.jsonl` — 封禁/解封记录
-- `whitelist.jsonl` — 白名单记录
-- `vp-snapshot.json` — VP 积分快照
-
-### Q: 如何备份数据
-
-```bash
-# 备份整个数据目录
-tar -czf anticheat-backup-$(date +%Y%m%d).tar.gz /opt/minecraft-anticheat/data/
-# 备份配置文件
-cp penalty-config.yml penalty-config.yml.bak
-```
+Use the repository bug report form and include the exact release tag, image architecture, Paper build, Java version, and redacted logs. Report exploitable vulnerabilities privately according to [SECURITY.md](SECURITY.md).

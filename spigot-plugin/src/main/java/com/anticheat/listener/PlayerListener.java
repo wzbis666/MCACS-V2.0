@@ -55,7 +55,9 @@ public class PlayerListener implements Listener {
             if (nameBanned && nameExpiry != null && nameExpiry.before(new java.util.Date())) {
                 Bukkit.getBanList(org.bukkit.BanList.Type.NAME).pardon(name);
                 if (uuidBanned) {
-                    offline.ban(null, (java.util.Date) null, null);
+                    @SuppressWarnings({"rawtypes", "unchecked"})
+                    org.bukkit.BanList profileBans = Bukkit.getBanList(org.bukkit.BanList.Type.PROFILE);
+                    profileBans.pardon(uuid.toString());
                 }
                 return;
             }

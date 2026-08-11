@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { appendFileSync, existsSync, readFileSync, renameSync, statSync, mkdirSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, renameSync, statSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import type { CheatRecord, RecordsQuery } from '../contracts/index.js'
 
@@ -117,6 +117,46 @@ export class RecordStore {
   /** 获取所有记录（用于统计） */
   getAllRecords(): CheatRecord[] {
     return this.query({})
+  }
+
+  /** 删除超过指定天数的旧记录（SQLite + JSONL 同步清理） */
+  pruneOlderThan(days: number): number {
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
+
+    // SQLite 清理
+    const result = this.db.prepare('DELETE FROM cheat_records WHERE timestamp < ?').run(cutoff)
+    const deletedCount = result.changes
+
+    // JSONL 清理：重写文件，只保留未过期的行
+    if (existsSync(this.filePath)) {
+      const content = readFileSync(this.filePath, 'utf-8')
+      const lines = content.split('\n').filter(line => line.trim().length > 0)
+      const kept: string[] = []
+      let removedFromFile = 0
+
+      for (const line of lines) {
+        try {
+          const record = JSON.parse(line) as { timestamp: number }
+          if (record.timestamp >= cutoff) {
+            kept.push(line)
+          } else {
+            removedFromFile++
+          }
+        } catch {
+          // 保留无法解析的行
+          kept.push(line)
+        }
+      }
+
+      if (removedFromFile > 0) {
+        // 原子写入：先写临时文件再重命名
+        const tmpPath = this.filePath + '.tmp'
+        writeFileSync(tmpPath, kept.join('\n') + (kept.length > 0 ? '\n' : ''), 'utf-8')
+        renameSync(tmpPath, this.filePath)
+      }
+    }
+
+    return deletedCount
   }
 
   /** 从 JSONL 审计日志重建 SQLite 查询库 */

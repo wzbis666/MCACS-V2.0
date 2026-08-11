@@ -1,0 +1,8 @@
+# AntiCheat Monitor Plugin Configuration
+ws-uri: "ws://localhost:55211/spigot"
+auth-token: ""
+server-name: "main-server"
+
+# Paper sends at most one movement snapshot per server tick. The Node layer
+# stores every third tick normally and every tick for an active investigation.
+sample-interval: 50

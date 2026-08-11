@@ -1,0 +1,79 @@
+# Grim 2.3.73 -> AntiCheatMonitor bridge
+# Grim only emits accepted signals. AntiCheatMonitor owns warnings, cases,
+# temporary bans and appeals. No kick/ban command is executed by Grim itself.
+
+Punishments:
+  Simulation:
+    remove-violations-after: 1800
+    checks: ["Simulation", "GroundSpoof", "Timer", "TimerLimit", "NoFall"]
+    commands:
+      # interval=0: one accepted standard signal per Grim VL lifecycle.
+      # Repeated VL increments from the same incident must not consume both strikes.
+      - "20:0 anticheat grim-signal %player% %check_name% %vl% standard 20"
+      - "100:0 anticheat grim-signal %player% %check_name% %vl% high 100"
+      - "20:20 [alert]"
+      - "20:20 [log]"
+  Knockback:
+    remove-violations-after: 1800
+    checks: ["Knockback", "Explosion"]
+    commands:
+      - "5:0 anticheat grim-signal %player% %check_name% %vl% standard 5"
+      - "20:0 anticheat grim-signal %player% %check_name% %vl% high 20"
+      - "5:5 [alert]"
+      - "5:5 [log]"
+  Post:
+    remove-violations-after: 1800
+    checks: ["Post"]
+    commands:
+      - "20:0 anticheat grim-signal %player% %check_name% %vl% standard 20"
+      - "40:0 anticheat grim-signal %player% %check_name% %vl% high 40"
+      - "20:20 [alert]"
+      - "20:20 [log]"
+  BadPackets:
+    remove-violations-after: 1800
+    checks: ["BadPackets", "PacketOrder", "Crash"]
+    commands:
+      - "20:0 anticheat grim-signal %player% %check_name% %vl% standard 20"
+      - "40:0 anticheat grim-signal %player% %check_name% %vl% high 40"
+      - "20:20 [alert]"
+      - "20:20 [log]"
+  Reach:
+    remove-violations-after: 1800
+    checks: ["Reach"]
+    commands:
+      - "1:0 anticheat grim-signal %player% %check_name% %vl% standard 1"
+      - "3:0 anticheat grim-signal %player% %check_name% %vl% high 3"
+      - "1:1 [alert]"
+      - "1:1 [log]"
+  Hitboxes:
+    remove-violations-after: 1800
+    checks: ["Hitboxes"]
+    commands:
+      - "5:0 anticheat grim-signal %player% %check_name% %vl% standard 5"
+      - "11:0 anticheat grim-signal %player% %check_name% %vl% high 11"
+      - "5:3 [alert]"
+      - "5:3 [log]"
+  Misc:
+    remove-violations-after: 1800
+    checks: ["Vehicle", "NoSlow", "Sprint", "MultiActions", "Place", "Baritone", "Break", "TransactionOrder", "Elytra", "Chat", "Exploit"]
+    commands:
+      - "10:0 anticheat grim-signal %player% %check_name% %vl% standard 10"
+      - "20:0 anticheat grim-signal %player% %check_name% %vl% high 20"
+      - "10:5 [alert]"
+      - "10:5 [log]"
+  Combat:
+    remove-violations-after: 1800
+    checks: ["Interact", "Aim"]
+    commands:
+      - "20:0 anticheat grim-signal %player% %check_name% %vl% standard 20"
+      - "40:0 anticheat grim-signal %player% %check_name% %vl% high 40"
+      - "20:20 [alert]"
+      - "20:20 [log]"
+  Autoclicker:
+    remove-violations-after: 1800
+    checks: ["Autoclicker"]
+    commands:
+      - "20:0 anticheat grim-signal %player% %check_name% %vl% standard 20"
+      - "40:0 anticheat grim-signal %player% %check_name% %vl% high 40"
+      - "20:20 [alert]"
+      - "20:20 [log]"

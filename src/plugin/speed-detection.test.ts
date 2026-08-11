@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import { SpeedThresholdService } from './speed-threshold-service.js'
-import { checkSpeed, checkFly, initSpeedThresholdService, shutdownSpeedThresholdService, SENSITIVITY_PRESETS } from './rule-engine.js'
+import { checkSpeed, checkFly, initSpeedThresholdService, shutdownSpeedThresholdService } from './rule-engine.js'
 import type { PlayerMovementState } from './rule-engine.js'
 import type { PlayerState, CheatDetection } from '../contracts/index.js'
 import type { RecentData } from './rule-engine.js'
@@ -67,8 +67,6 @@ function makeMoveState(overrides: Partial<PlayerMovementState> = {}): PlayerMove
     ...overrides,
   }
 }
-
-const BALANCED_CONFIG = SENSITIVITY_PRESETS.balanced
 
 // ── 测试 ──
 
@@ -166,7 +164,7 @@ describe('checkSpeed — 误判防护', () => {
     const data = makeRecentData(
       [{ vx: 3.0, vz: 3.0 }],  // sqrt(9+9) ≈ 4.24
     )
-    expect(checkSpeed(state, data, makeMoveState(), BALANCED_CONFIG)).toBeNull()
+    expect(checkSpeed(state, data, makeMoveState())).toBeNull()
   })
 
   it('正常疾跑 (5.6 blocks/s) 不应触发检测', () => {
@@ -175,7 +173,7 @@ describe('checkSpeed — 误判防护', () => {
       [{ vx: 4.0, vz: 4.0 }],  // sqrt(16+16) ≈ 5.66
       [{ action: 'sprinting', state: true }],
     )
-    expect(checkSpeed(state, data, makeMoveState(), BALANCED_CONFIG)).toBeNull()
+    expect(checkSpeed(state, data, makeMoveState())).toBeNull()
   })
 
   it('疾跑+跳跃 (7.0 blocks/s) 不应触发检测', () => {
@@ -184,7 +182,7 @@ describe('checkSpeed — 误判防护', () => {
       [{ vx: 5.0, vz: 5.0, onGround: false }],  // sqrt(25+25) ≈ 7.07
       [{ action: 'sprinting', state: true }],
     )
-    expect(checkSpeed(state, data, makeMoveState(), BALANCED_CONFIG)).toBeNull()
+    expect(checkSpeed(state, data, makeMoveState())).toBeNull()
   })
 
   it('速度I+疾跑 (6.73 blocks/s) 不应触发检测', () => {
@@ -196,7 +194,7 @@ describe('checkSpeed — 误判防护', () => {
         { action: 'speed_effect', state: true },
       ],
     )
-    expect(checkSpeed(state, data, makeMoveState(), BALANCED_CONFIG)).toBeNull()
+    expect(checkSpeed(state, data, makeMoveState())).toBeNull()
   })
 
   it('速度II+疾跑 (7.86 blocks/s) 不应触发检测', () => {
@@ -208,7 +206,7 @@ describe('checkSpeed — 误判防护', () => {
         { action: 'speed_effect_2', state: true },
       ],
     )
-    expect(checkSpeed(state, data, makeMoveState(), BALANCED_CONFIG)).toBeNull()
+    expect(checkSpeed(state, data, makeMoveState())).toBeNull()
   })
 
   it('乘船 (8.4 blocks/s) 不应触发检测', () => {
@@ -220,7 +218,7 @@ describe('checkSpeed — 误判防护', () => {
         { action: 'vehicle_boat', state: true },
       ],
     )
-    expect(checkSpeed(state, data, makeMoveState(), BALANCED_CONFIG)).toBeNull()
+    expect(checkSpeed(state, data, makeMoveState())).toBeNull()
   })
 
   it('蓝冰船 (16.6 blocks/s) 不应触发检测', () => {
@@ -232,7 +230,7 @@ describe('checkSpeed — 误判防护', () => {
         { action: 'vehicle_boat', state: true },
       ],
     )
-    expect(checkSpeed(state, data, makeMoveState(), BALANCED_CONFIG)).toBeNull()
+    expect(checkSpeed(state, data, makeMoveState())).toBeNull()
   })
 
   it('骑马 (14.5 blocks/s) 不应触发检测', () => {
@@ -244,7 +242,7 @@ describe('checkSpeed — 误判防护', () => {
         { action: 'vehicle_mount', state: true },
       ],
     )
-    expect(checkSpeed(state, data, makeMoveState(), BALANCED_CONFIG)).toBeNull()
+    expect(checkSpeed(state, data, makeMoveState())).toBeNull()
   })
 
   it('矿车 (8.0 blocks/s) 不应触发检测', () => {
@@ -256,7 +254,7 @@ describe('checkSpeed — 误判防护', () => {
         { action: 'vehicle_minecart', state: true },
       ],
     )
-    expect(checkSpeed(state, data, makeMoveState(), BALANCED_CONFIG)).toBeNull()
+    expect(checkSpeed(state, data, makeMoveState())).toBeNull()
   })
 
   it('激流三叉戟状态不应触发检测', () => {
@@ -265,7 +263,7 @@ describe('checkSpeed — 误判防护', () => {
       [{ vx: 50.0, vz: 50.0 }],  // 极高速度
       [{ action: 'riptiding', state: true }],
     )
-    expect(checkSpeed(state, data, makeMoveState(), BALANCED_CONFIG)).toBeNull()
+    expect(checkSpeed(state, data, makeMoveState())).toBeNull()
   })
 
   it('鞘翅飞行不应触发检测', () => {
@@ -274,7 +272,7 @@ describe('checkSpeed — 误判防护', () => {
       [{ vx: 30.0, vz: 30.0, onGround: false }],  // sqrt(900+900) ≈ 42.4
       [{ action: 'elytra_flying', state: true }],
     )
-    expect(checkSpeed(state, data, makeMoveState(), BALANCED_CONFIG)).toBeNull()
+    expect(checkSpeed(state, data, makeMoveState())).toBeNull()
   })
 
   it('明显作弊速度 (20 blocks/s 步行) 应触发检测', () => {
@@ -283,7 +281,7 @@ describe('checkSpeed — 误判防护', () => {
       [{ vx: 14.0, vz: 14.0 }],  // sqrt(196+196) ≈ 19.8
       // 无任何 buff/载具状态
     )
-    const result = checkSpeed(state, data, makeMoveState(), BALANCED_CONFIG)
+    const result = checkSpeed(state, data, makeMoveState())
     expect(result).not.toBeNull()
     expect(result!.cheatType).toBe('speed')
     expect(result!.confidence).toBe('high')
@@ -295,7 +293,7 @@ describe('checkSpeed — 误判防护', () => {
       [{ vx: 5.7, vz: 5.7 }],  // sqrt(32.49+32.49) ≈ 8.06
       // 无疾跑状态 → 使用 walk 阈值 5.6
     )
-    const result = checkSpeed(state, data, makeMoveState(), BALANCED_CONFIG)
+    const result = checkSpeed(state, data, makeMoveState())
     expect(result).not.toBeNull()
     expect(result!.cheatType).toBe('speed')
   })
@@ -303,7 +301,7 @@ describe('checkSpeed — 误判防护', () => {
   it('创造/旁观模式不触发检测', () => {
     const state = makePlayerState({ gameMode: 'creative' })
     const data = makeRecentData([{ vx: 50.0, vz: 50.0 }])
-    expect(checkSpeed(state, data, makeMoveState(), BALANCED_CONFIG)).toBeNull()
+    expect(checkSpeed(state, data, makeMoveState())).toBeNull()
   })
 
   it('冰面疾跑 (7.5 blocks/s) 使用 sprintJump 阈值不应误判', () => {
@@ -313,7 +311,7 @@ describe('checkSpeed — 误判防护', () => {
       [{ vx: 5.3, vz: 5.3, onGround: false }],  // sqrt(28.09+28.09) ≈ 7.49
       [{ action: 'sprinting', state: true }],
     )
-    expect(checkSpeed(state, data, makeMoveState(), BALANCED_CONFIG)).toBeNull()
+    expect(checkSpeed(state, data, makeMoveState())).toBeNull()
   })
 })
 
@@ -339,7 +337,7 @@ describe('checkFly — 水中上浮误判防护', () => {
     )
     // airStartMs = 3秒前，表示已在空中3秒
     const moveState = makeMoveState({ airStartMs: Date.now() - 3000, jumpPhase: 2 })
-    expect(checkFly(state, data, moveState, BALANCED_CONFIG)).toBeNull()
+    expect(checkFly(state, data, moveState)).toBeNull()
   })
 
   it('游泳状态不应触发飞行检测', () => {
@@ -352,7 +350,7 @@ describe('checkFly — 水中上浮误判防护', () => {
       [{ action: 'swimming', state: true }],
     )
     const moveState = makeMoveState({ airStartMs: Date.now() - 2000, jumpPhase: 2 })
-    expect(checkFly(state, data, moveState, BALANCED_CONFIG)).toBeNull()
+    expect(checkFly(state, data, moveState)).toBeNull()
   })
 
   it('水中游泳不应触发速度检测', () => {
@@ -362,7 +360,7 @@ describe('checkFly — 水中上浮误判防护', () => {
       [{ vx: 4.0, vz: 4.0, onGround: false }],  // sqrt(16+16) ≈ 5.66
       [{ action: 'swimming', state: true }],
     )
-    expect(checkSpeed(state, data, makeMoveState(), BALANCED_CONFIG)).toBeNull()
+    expect(checkSpeed(state, data, makeMoveState())).toBeNull()
   })
 
   it('水中状态不应触发速度检测', () => {
@@ -371,6 +369,6 @@ describe('checkFly — 水中上浮误判防护', () => {
       [{ vx: 4.0, vz: 4.0, onGround: false }],
       [{ action: 'in_water', state: true }],
     )
-    expect(checkSpeed(state, data, makeMoveState(), BALANCED_CONFIG)).toBeNull()
+    expect(checkSpeed(state, data, makeMoveState())).toBeNull()
   })
 })

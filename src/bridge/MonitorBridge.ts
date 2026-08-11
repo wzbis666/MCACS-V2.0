@@ -487,17 +487,8 @@ export class MonitorBridge {
     const npcId = this.tracker.resolveNpcId(event.playerId)
     const state = this.playerStates.get(event.playerId)
 
-    // 使用 exitType 作为主要判断依据（由 Spigot 端权威标记）
-    // exitType='cheat_ban': 作弊封禁退出，NPC 必须保留
-    // exitType='normal': 正常退出，NPC 应移除
-    const isCheatBan = event.exitType === 'cheat_ban'
-
-    // 兜底防御：即使 exitType 不正确，也通过其他信号判断
-    const isPunishingPhase = state?.phase === 'punishing'
-    const isBannedInManager = this.isPlayerBanned?.(event.playerId) ?? false
-    const shouldKeepNpc = isCheatBan || isPunishingPhase || isBannedInManager
-
-    if (shouldKeepNpc) {
+    // Spigot's exitType is authoritative: only an explicit cheat ban keeps the NPC.
+    if (event.exitType === 'cheat_ban') {
       if (npcId) {
         this.activityStream.emitActivity(npcId, '🔒', `已被处罚，关押中`)
       }
@@ -534,7 +525,7 @@ export class MonitorBridge {
             { type: 'npc_phase', npcId, phase: 'offline' },
           ]
         : []
-      console.log(`[MonitorBridge] player.leave (cheat_ban): playerId=${event.playerId}, npcId=${npcId}, exitType=${event.exitType}, phase=${state?.phase}, isBanned=${isBannedInManager}, keeping NPC alive`)
+      console.log(`[MonitorBridge] player.leave (cheat_ban): playerId=${event.playerId}, npcId=${npcId}, phase=${state?.phase}, keeping NPC alive`)
       this.emit(gameEvents)
       return
     }

@@ -8,10 +8,9 @@
 // 3. 跳跃阶段追踪（区分起跳/空中/着地）
 // 4. 优势累积模型（替换简单超出比例为 GrimAC 风格的累积+衰减）
 // 5. TPS 感知（自动调整阈值）
-// 6. 可配置灵敏度（strict/balanced/lenient）
-// 7. 多层验证（L1极端检测 → L2物理验证 → L3统计验证 → L4基线验证）
+// 6. 多层验证（L1极端检测 → L2物理验证 → L3统计验证 → L4基线验证）
 
-import type { PlayerState, CheatDetection, CheatType, Confidence, Evidence } from '../contracts/index.js'
+import type { PlayerState, CheatDetection, CheatType, Confidence, Evidence, NearbyOreContext } from '../contracts/index.js'
 import { SpeedThresholdService } from './speed-threshold-service.js'
 
 export interface RecentData {
@@ -38,6 +37,15 @@ export interface RecentData {
     action: 'break' | 'place'
     blockType: string
     speed: number
+    x?: number
+    y?: number
+    z?: number
+    exposedFaces?: number
+    nearbyOres?: NearbyOreContext[]
+    yaw?: number
+    pitch?: number
+    placedFace?: string
+    placementIntervalMs?: number
     timestamp: number
   }>
   actions: Array<{
@@ -79,81 +87,32 @@ const PHYSICS = {
 }
 
 // ══════════════════════════════════════════════════════════════════
-//  检测灵敏度配置
+//  检测配置（精细模式）
 // ══════════════════════════════════════════════════════════════════
 
-export type SensitivityLevel = 'strict' | 'balanced' | 'lenient'
-
-export interface SensitivityConfig {
+const DETECTION_CONFIG = {
   /** 飞行检测：最小空中持续时间阈值 (毫秒) */
-  flyMinAirTimeMs: number
+  flyMinAirTimeMs: 500,    // 0.5秒
   /** 飞行检测：垂直速度超出物理预测的容差 (blocks/s) */
-  flyVerticalTolerance: number
-  /** 飞行检测：坠落包络线容差 (blocks/s) — 针对 ~250ms 平均速度的容差 */
-  flyEnvelopeTolerance: number
+  flyVerticalTolerance: 1.5,
+  /** 飞行检测：坠落包络线容差 (blocks/s) */
+  flyEnvelopeTolerance: 2.0,
   /** 速度检测：优势累积触发阈值 */
-  speedAdvantageThreshold: number
+  speedAdvantageThreshold: 1.0,
   /** 速度检测：优势衰减率（每 tick 乘以） */
-  speedAdvantageDecay: number
+  speedAdvantageDecay: 0.995,
   /** 速度检测：单次偏移即时触发阈值 */
-  speedImmediateThreshold: number
+  speedImmediateThreshold: 0.5,
   /** 速度检测：滑动窗口大小（秒） */
-  speedWindowSeconds: number
+  speedWindowSeconds: 3,
   /** 速度检测：窗口内超标比例阈值 */
-  speedExceedRatioThreshold: number
+  speedExceedRatioThreshold: 0.3,
   /** TPS 低于此值时暂停检测 */
-  tpsPauseThreshold: number
+  tpsPauseThreshold: 14,
   /** TPS 低于此值时放宽阈值 */
-  tpsRelaxThreshold: number
+  tpsRelaxThreshold: 18,
   /** TPS 放宽系数 */
-  tpsRelaxFactor: number
-  /** 最低置信度要求：低于此置信度的检测被过滤 */
-  minConfidence: 'low' | 'medium' | 'high'
-}
-
-const SENSITIVITY_PRESETS: Record<SensitivityLevel, SensitivityConfig> = {
-  strict: {
-    flyMinAirTimeMs: 500,    // 0.5秒
-    flyVerticalTolerance: 1.5,
-    flyEnvelopeTolerance: 2.0,   // 平均速度容差 (blocks/s)
-    speedAdvantageThreshold: 1.0,
-    speedAdvantageDecay: 0.995,
-    speedImmediateThreshold: 0.5,
-    speedWindowSeconds: 3,
-    speedExceedRatioThreshold: 0.3,
-    tpsPauseThreshold: 14,
-    tpsRelaxThreshold: 18,
-    tpsRelaxFactor: 1.15,
-    minConfidence: 'low',
-  },
-  balanced: {
-    flyMinAirTimeMs: 1000,   // 1秒
-    flyVerticalTolerance: 2.5,
-    flyEnvelopeTolerance: 3.5,   // 平均速度容差 (blocks/s)
-    speedAdvantageThreshold: 2.0,
-    speedAdvantageDecay: 0.99,
-    speedImmediateThreshold: 1.0,
-    speedWindowSeconds: 5,
-    speedExceedRatioThreshold: 0.4,
-    tpsPauseThreshold: 14,
-    tpsRelaxThreshold: 17,
-    tpsRelaxFactor: 1.25,
-    minConfidence: 'low',
-  },
-  lenient: {
-    flyMinAirTimeMs: 2000,   // 2秒
-    flyVerticalTolerance: 4.0,
-    flyEnvelopeTolerance: 5.0,   // 平均速度容差 (blocks/s)
-    speedAdvantageThreshold: 4.0,
-    speedAdvantageDecay: 0.98,
-    speedImmediateThreshold: 2.0,
-    speedWindowSeconds: 8,
-    speedExceedRatioThreshold: 0.5,
-    tpsPauseThreshold: 12,
-    tpsRelaxThreshold: 16,
-    tpsRelaxFactor: 1.40,
-    minConfidence: 'medium',
-  },
+  tpsRelaxFactor: 1.15,
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -278,10 +237,10 @@ export function getCurrentTPS(): number {
 }
 
 /** 根据 TPS 计算阈值调整系数 */
-function getTPSFactor(config: SensitivityConfig): number {
+function getTPSFactor(): number {
   const tps = getCurrentTPS()
-  if (tps < config.tpsPauseThreshold) return -1 // 暂停检测
-  if (tps < config.tpsRelaxThreshold) return config.tpsRelaxFactor
+  if (tps < DETECTION_CONFIG.tpsPauseThreshold) return -1 // 暂停检测
+  if (tps < DETECTION_CONFIG.tpsRelaxThreshold) return DETECTION_CONFIG.tpsRelaxFactor
   return 1.0
 }
 
@@ -407,7 +366,6 @@ function checkFly(
   state: PlayerState,
   data: RecentData,
   moveState: PlayerMovementState,
-  config: SensitivityConfig,
 ): CheatDetection | null {
   if (state.gameMode === 'creative' || state.gameMode === 'spectator') return null
 
@@ -429,15 +387,15 @@ function checkFly(
   if (moveState.teleportGraceTicks > 0) return null
 
   // TPS 检查
-  const tpsFactor = getTPSFactor(config)
+  const tpsFactor = getTPSFactor()
   if (tpsFactor < 0) return null
 
   const now = Date.now()
   const recentMovements = data.movements.filter(m => now - m.timestamp < 10_000)
   if (recentMovements.length < 2) return null
 
-  const tolerance = config.flyVerticalTolerance * tpsFactor
-  const envelopeTolerance = config.flyEnvelopeTolerance * tpsFactor
+  const tolerance = DETECTION_CONFIG.flyVerticalTolerance * tpsFactor
+  const envelopeTolerance = DETECTION_CONFIG.flyEnvelopeTolerance * tpsFactor
 
   // ── L1: 极端飞行检测（瞬移级别） ──
   const maxVy = recentMovements.reduce((max, m) => Math.max(max, m.vy), 0)
@@ -459,7 +417,7 @@ function checkFly(
   if (moveState.airStartMs > 0) {
     airTimeMs = now - moveState.airStartMs
   }
-  const minAirTimeMs = config.flyMinAirTimeMs
+  const minAirTimeMs = DETECTION_CONFIG.flyMinAirTimeMs
 
   if (airTimeMs < minAirTimeMs) return null
 
@@ -542,10 +500,6 @@ function checkFly(
   else if (score < 65) confidence = 'medium'
   else confidence = 'high'
 
-  // 最低置信度过滤
-  if (confidence === 'low' && config.minConfidence !== 'low') return null
-  if (confidence === 'medium' && config.minConfidence === 'high') return null
-
   return {
     playerId: state.playerId,
     cheatType: 'fly',
@@ -569,7 +523,6 @@ function checkSpeed(
   state: PlayerState,
   data: RecentData,
   moveState: PlayerMovementState,
-  config: SensitivityConfig,
 ): CheatDetection | null {
   if (state.gameMode === 'creative' || state.gameMode === 'spectator') return null
 
@@ -579,14 +532,14 @@ function checkSpeed(
   if (isInWater || isSwimming) return null
 
   // TPS 检查
-  const tpsFactor = getTPSFactor(config)
+  const tpsFactor = getTPSFactor()
   if (tpsFactor < 0) return null
 
   // 传送宽限期
   if (moveState.teleportGraceTicks > 0) return null
 
   const now = Date.now()
-  const windowMs = config.speedWindowSeconds * 1000
+  const windowMs = DETECTION_CONFIG.speedWindowSeconds * 1000
   const recentMovements = data.movements.filter(m => now - m.timestamp < windowMs)
   if (recentMovements.length === 0) return null
 
@@ -680,7 +633,7 @@ function checkSpeed(
       exceedCount++
     } else {
       // 正常移动时衰减优势
-      advantage *= config.speedAdvantageDecay
+      advantage *= DETECTION_CONFIG.speedAdvantageDecay
     }
   }
 
@@ -691,7 +644,7 @@ function checkSpeed(
   }
 
   // 限制优势上限
-  advantage = Math.min(advantage, config.speedAdvantageThreshold * 4)
+  advantage = Math.min(advantage, DETECTION_CONFIG.speedAdvantageThreshold * 4)
   moveState.speedAdvantage = advantage
 
   // ── L3: 滑动窗口统计 ──
@@ -704,29 +657,25 @@ function checkSpeed(
 
   // ── 综合判定 ──
   // 即时触发：单次偏移超过即时阈值
-  const immediateTrigger = maxOffset > config.speedImmediateThreshold
+  const immediateTrigger = maxOffset > DETECTION_CONFIG.speedImmediateThreshold
 
   // 累积触发：优势累积超过阈值
-  const cumulativeTrigger = advantage > config.speedAdvantageThreshold
+  const cumulativeTrigger = advantage > DETECTION_CONFIG.speedAdvantageThreshold
 
   // 窗口触发：窗口内超标比例超过阈值
-  const windowTrigger = exceedRatio > config.speedExceedRatioThreshold
+  const windowTrigger = exceedRatio > DETECTION_CONFIG.speedExceedRatioThreshold
 
   if (!immediateTrigger && !cumulativeTrigger && !windowTrigger) return null
 
   // ── 置信度判定 ──
   let confidence: Confidence
-  if (immediateTrigger || advantage > config.speedAdvantageThreshold * 2) {
+  if (immediateTrigger || advantage > DETECTION_CONFIG.speedAdvantageThreshold * 2) {
     confidence = 'high'
-  } else if (cumulativeTrigger || exceedRatio > config.speedExceedRatioThreshold * 1.5) {
+  } else if (cumulativeTrigger || exceedRatio > DETECTION_CONFIG.speedExceedRatioThreshold * 1.5) {
     confidence = 'medium'
   } else {
     confidence = 'low'
   }
-
-  // 最低置信度过滤
-  if (confidence === 'low' && config.minConfidence !== 'low') return null
-  if (confidence === 'medium' && config.minConfidence === 'high') return null
 
   return {
     playerId: state.playerId,
@@ -734,9 +683,9 @@ function checkSpeed(
     confidence,
     evidence: [
       { metric: 'horizontal_speed', value: maxSpeed, threshold, duration: windowMs },
-      { metric: 'speed_advantage', value: advantage, threshold: config.speedAdvantageThreshold, duration: 0 },
-      { metric: 'max_offset', value: maxOffset, threshold: config.speedImmediateThreshold, duration: 0 },
-      { metric: 'exceed_ratio', value: exceedRatio, threshold: config.speedExceedRatioThreshold, duration: windowMs },
+      { metric: 'speed_advantage', value: advantage, threshold: DETECTION_CONFIG.speedAdvantageThreshold, duration: 0 },
+      { metric: 'max_offset', value: maxOffset, threshold: DETECTION_CONFIG.speedImmediateThreshold, duration: 0 },
+      { metric: 'exceed_ratio', value: exceedRatio, threshold: DETECTION_CONFIG.speedExceedRatioThreshold, duration: windowMs },
       { metric: 'speed_effect_level', value: speedEffectLevel, threshold: 0, duration: 0 },
       { metric: 'beacon_speed_level', value: beaconSpeedLevel, threshold: 0, duration: 0 },
     ],
@@ -944,24 +893,13 @@ export function evaluate(
   playerState: PlayerState,
   recentData: RecentData,
 ): CheatDetection[] {
-  // 使用默认 balanced 灵敏度（DetectionEngine 实例方法使用可配置灵敏度）
-  return evaluateWithSensitivity(playerId, playerState, recentData, 'balanced', null)
-}
-
-function evaluateWithSensitivity(
-  playerId: string,
-  playerState: PlayerState,
-  recentData: RecentData,
-  sensitivity: SensitivityLevel,
-  moveState: PlayerMovementState | null,
-): CheatDetection[] {
-  const config = SENSITIVITY_PRESETS[sensitivity]
+  const moveState = createDefaultMoveState()
   const detections: CheatDetection[] = []
 
-  const flyResult = checkFly(playerState, recentData, moveState ?? createDefaultMoveState(), config)
+  const flyResult = checkFly(playerState, recentData, moveState)
   if (flyResult) detections.push(flyResult)
 
-  const speedResult = checkSpeed(playerState, recentData, moveState ?? createDefaultMoveState(), config)
+  const speedResult = checkSpeed(playerState, recentData, moveState)
   if (speedResult) detections.push(speedResult)
 
   const killAuraResult = checkKillAura(playerState, recentData)
@@ -1006,7 +944,7 @@ function evaluateWithSensitivity(
       type: 'detection_result',
       playerId,
       cheatType: d.cheatType,
-      details: `${d.cheatType} detected (confidence: ${d.confidence}, sensitivity: ${sensitivity})`,
+      details: `${d.cheatType} detected (confidence: ${d.confidence})`,
     })
   }
 
@@ -1036,39 +974,16 @@ function createDefaultMoveState(): PlayerMovementState {
 export class DetectionEngine {
   private cooldowns = new Map<string, Map<CheatType, number>>()
   private cooldownMs: number
-  private sensitivity: SensitivityLevel
   private moveStates = new Map<string, PlayerMovementState>()
 
-  constructor(cooldownMs = 6000, sensitivity: SensitivityLevel = 'balanced') {
+  constructor(cooldownMs = 6000) {
     this.cooldownMs = cooldownMs
-    this.sensitivity = sensitivity
   }
 
   /** 设置冷却时间（毫秒） */
   setCooldownMs(ms: number): void {
     this.cooldownMs = ms
     console.log(`[DetectionEngine] Cooldown set to: ${ms}ms`)
-  }
-
-  /** 设置灵敏度 */
-  setSensitivity(level: SensitivityLevel): void {
-    this.sensitivity = level
-    console.log(`[DetectionEngine] Sensitivity set to: ${level}`)
-  }
-
-  /** 获取当前灵敏度 */
-  getSensitivity(): SensitivityLevel {
-    return this.sensitivity
-  }
-
-  /** 获取灵敏度预设配置 */
-  getSensitivityConfig(): SensitivityConfig {
-    return SENSITIVITY_PRESETS[this.sensitivity]
-  }
-
-  /** 获取所有灵敏度预设 */
-  getAllSensitivityPresets(): Record<SensitivityLevel, SensitivityConfig> {
-    return { ...SENSITIVITY_PRESETS }
   }
 
   /** 更新玩家移动状态（每次收到移动数据时调用） */
@@ -1133,7 +1048,60 @@ export class DetectionEngine {
 
   evaluate(playerId: string, playerState: PlayerState, recentData: RecentData): CheatDetection[] {
     const moveState = this.moveStates.get(playerId) ?? createDefaultMoveState()
-    const allDetections = evaluateWithSensitivity(playerId, playerState, recentData, this.sensitivity, moveState)
+    const detections: CheatDetection[] = []
+
+    const flyResult = checkFly(playerState, recentData, moveState)
+    if (flyResult) detections.push(flyResult)
+
+    const speedResult = checkSpeed(playerState, recentData, moveState)
+    if (speedResult) detections.push(speedResult)
+
+    const killAuraResult = checkKillAura(playerState, recentData)
+    if (killAuraResult) detections.push(killAuraResult)
+
+    const xrayResult = checkXRay(playerState, recentData)
+    if (xrayResult) detections.push(xrayResult)
+
+    const scaffoldResult = checkScaffold(playerState, recentData)
+    if (scaffoldResult) detections.push(scaffoldResult)
+
+    const autoClickerResult = checkAutoClicker(playerState, recentData)
+    if (autoClickerResult) detections.push(autoClickerResult)
+
+    const reachResult = checkReach(playerState, recentData)
+    if (reachResult) detections.push(reachResult)
+
+    // 优先级互斥处理
+    const suppressedTypes = new Set<CheatType>()
+    for (const detection of detections) {
+      const mutexTypes = MUTEX_GROUPS.get(detection.cheatType)
+      if (mutexTypes) {
+        for (const suppressed of mutexTypes) suppressedTypes.add(suppressed)
+      }
+    }
+
+    const allDetections = detections.filter(d => {
+      if (suppressedTypes.has(d.cheatType)) {
+        logDetection({
+          type: 'priority_suppression',
+          playerId,
+          cheatType: d.cheatType,
+          details: `Suppressed ${d.cheatType} detection due to higher-priority detection`,
+        })
+        return false
+      }
+      return true
+    })
+
+    for (const d of allDetections) {
+      logDetection({
+        type: 'detection_result',
+        playerId,
+        cheatType: d.cheatType,
+        details: `${d.cheatType} detected (confidence: ${d.confidence})`,
+      })
+    }
+
     const now = Date.now()
 
     const filtered: CheatDetection[] = []
@@ -1176,8 +1144,8 @@ export class DetectionEngine {
 export {
   checkFly, checkSpeed, checkKillAura, checkXRay,
   checkScaffold, checkAutoClicker, checkReach,
-  PHYSICS, SENSITIVITY_PRESETS,
+  PHYSICS,
   predictVerticalVelocity, predictYOffset, getMaxJumpHeight, getJumpVelocity,
   validateVerticalEnvelope,
 }
-export type { SensitivityConfig as SensitivityConfigType, PlayerMovementState }
+export type { PlayerMovementState }

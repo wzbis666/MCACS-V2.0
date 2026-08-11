@@ -4,9 +4,11 @@
 export type {
   CheatType,
   Confidence,
+  GrimSignalSeverity,
   ActionType,
   PlayerPhase,
   Evidence,
+  NearbyOreContext,
   CheatDetection,
   AntiCheatEvent,
 } from './anticheat-events.js';

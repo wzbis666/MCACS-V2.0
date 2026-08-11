@@ -8,6 +8,9 @@ import type { CheatType, Confidence } from '../contracts/index.js'
 
 export interface PenaltyConfig {
   enabled: boolean
+  detectionSource: 'grim' | 'legacy'
+  legacyXrayEnabled: boolean
+  strikeWindowMinutes: number
   /** 警告显示时长（毫秒），同时作为检测冷却时间 */
   warningDurationMs: number
   /** 二次违规封禁时长（字符串格式：1h/24h/7d/permanent） */
@@ -37,9 +40,12 @@ export interface PenaltyConfig {
 }
 
 const DEFAULT_CONFIG: PenaltyConfig = {
-  enabled: true,
+  enabled: false,
+  detectionSource: 'grim',
+  legacyXrayEnabled: true,
+  strikeWindowMinutes: 30,
   warningDurationMs: 6000,
-  secondOffenseBanDuration: '24h',
+  secondOffenseBanDuration: '1h',
   vpWeights: { low: 1, medium: 3, high: 8 },
   vpTypeMultipliers: {
     kill_aura: 1.5,
@@ -173,9 +179,13 @@ function parseValue(value: string): any {
 
 function mergeWithDefaults(parsed: Record<string, any>): PenaltyConfig {
   const p = parsed.penalty ?? {}
+  const detection = parsed.detection ?? {}
 
   return {
     enabled: p.enabled ?? DEFAULT_CONFIG.enabled,
+    detectionSource: detection.source === 'legacy' ? 'legacy' : DEFAULT_CONFIG.detectionSource,
+    legacyXrayEnabled: detection.legacy_xray_enabled ?? DEFAULT_CONFIG.legacyXrayEnabled,
+    strikeWindowMinutes: detection.strike_window_minutes ?? DEFAULT_CONFIG.strikeWindowMinutes,
     warningDurationMs: p.warning_duration_ms ?? DEFAULT_CONFIG.warningDurationMs,
     secondOffenseBanDuration: p.second_offense_ban_duration ?? DEFAULT_CONFIG.secondOffenseBanDuration,
     vpWeights: {

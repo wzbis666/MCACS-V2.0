@@ -1,0 +1,16 @@
+name: AntiCheatMonitor
+version: 0.1.0
+main: com.anticheat.AntiCheatPlugin
+api-version: '1.20'
+description: Lightweight anti-cheat monitoring with 3D investigation tools
+
+commands:
+  anticheat:
+    description: AntiCheat monitor admin commands
+    usage: /anticheat <reload|status>
+    permission: anticheat.admin
+
+permissions:
+  anticheat.admin:
+    description: Allows access to anti-cheat admin commands
+    default: op

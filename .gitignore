@@ -28,8 +28,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Data (runtime generated)
-data/
+# Root runtime data (keep source folders such as town-frontend/src/data trackable)
+/data/
 
 # Spigot plugin build artifacts
 spigot-plugin/target/
@@ -42,3 +42,6 @@ town-frontend/node_modules/
 
 # TypeScript incremental build
 *.tsbuildinfo
+
+# Local integration server scratch data
+/work/

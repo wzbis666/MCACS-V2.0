@@ -10,7 +10,7 @@ import { TownManagerNpc } from '../npc/TownManager.js'
 import { CameraController } from './visual/CameraController.js'
 import { TimeOfDayLighting } from './visual/TimeOfDayLighting.js'
 import { WeatherEffects } from './visual/WeatherEffects.js'
-import { PostProcessing } from './visual/PostProcessing.js'
+import type { PostProcessing } from './visual/PostProcessing.js'
 import { VFXSystem } from './visual/VFXSystem.js'
 import { EventDispatcher } from './EventDispatcher.js'
 import { AlertPanel } from '../ui/AlertPanel.js'
@@ -19,13 +19,15 @@ import { BanDialog } from '../ui/BanDialog.js'
 import { UnbanDialog } from '../ui/UnbanDialog.js'
 import { WhitelistDialog } from '../ui/WhitelistDialog.js'
 import { StatsPanel } from '../ui/StatsPanel.js'
-import { RecordsArchive } from '../ui/RecordsArchive.js'
 import { PenaltyLogPanel } from '../ui/PenaltyLogPanel.js'
-import { AlertSound } from '../audio/AlertSound.js'
-import { AudioSystem, getAudioSystem } from '../audio/AudioSystem.js'
-import { BGMManager } from '../audio/BGMManager.js'
-import { AmbientSoundManager } from '../audio/AmbientSoundManager.js'
-import type { PlayerPhase, Vec3, CheatType, Confidence, PlayerInfo, CheatRecordEntry, ServerStats, TimePeriod } from '../types.js'
+import { CasePanel } from '../ui/CasePanel.js'
+import { ShiftBriefing } from '../ui/ShiftBriefing.js'
+import type { EvidenceTimeline } from '../ui/EvidenceTimeline.js'
+import type { AlertSound } from '../audio/AlertSound.js'
+import type { AudioSystem } from '../audio/AudioSystem.js'
+import type { BGMManager } from '../audio/BGMManager.js'
+import type { AmbientSoundManager } from '../audio/AmbientSoundManager.js'
+import type { PlayerPhase, Vec3, CheatType, Confidence, PlayerInfo, CheatRecordEntry, ServerStats, TimePeriod, InvestigationCaseSummary, InvestigationDecision, OfflineSummary, CaseEvidenceSnapshot } from '../types.js'
 import { PHASE_CSS_COLORS, CHEAT_TYPE_LABELS } from '../types.js'
 import type { GameAction } from '../data/GameProtocol.js'
 
@@ -40,7 +42,7 @@ export class MainScene {
   private vehicleManager: VehicleManager
   private timeOfDayLighting: TimeOfDayLighting
   private weatherEffects: WeatherEffects
-  private postProcessing: PostProcessing
+  private postProcessing: PostProcessing | null = null
   private vfxSystem: VFXSystem
   private eventDispatcher: EventDispatcher
 
@@ -51,12 +53,14 @@ export class MainScene {
   private unbanDialog: UnbanDialog
   private whitelistDialog: WhitelistDialog
   private statsPanel: StatsPanel
-  private recordsArchive: RecordsArchive
   private penaltyLogPanel!: PenaltyLogPanel
-  private alertSound: AlertSound
-  private audioSystem: AudioSystem
-  private bgmManager: BGMManager
-  private ambientSound: AmbientSoundManager
+  private casePanel: CasePanel
+  private shiftBriefing: ShiftBriefing
+  private evidenceTimeline: EvidenceTimeline | null = null
+  private alertSound: AlertSound | null = null
+  private audioSystem: AudioSystem | null = null
+  private bgmManager: BGMManager | null = null
+  private ambientSound: AmbientSoundManager | null = null
 
   // State
   private playerDataMap: Map<string, PlayerInfo> = new Map()
@@ -146,7 +150,6 @@ export class MainScene {
     this.vehicleManager = new VehicleManager(this.scene)
 
     // Post Processing
-    this.postProcessing = new PostProcessing(this.renderer, this.scene, this.camera)
 
     // NPC Manager (new API with labelContainer)
     this.npcManager = new NPCManager(this.scene, this.labelContainer)
@@ -161,12 +164,9 @@ export class MainScene {
     this.unbanDialog = new UnbanDialog()
     this.whitelistDialog = new WhitelistDialog()
     this.statsPanel = new StatsPanel()
-    this.recordsArchive = new RecordsArchive()
     this.penaltyLogPanel = new PenaltyLogPanel()
-    this.alertSound = new AlertSound()
-    this.audioSystem = getAudioSystem()
-    this.bgmManager = new BGMManager()
-    this.ambientSound = new AmbientSoundManager()
+    this.casePanel = new CasePanel()
+    this.shiftBriefing = new ShiftBriefing()
 
     // Connection status
     this.connDot = document.getElementById('conn-dot')!
@@ -177,6 +177,21 @@ export class MainScene {
     this.setupKeyboardShortcuts()
     this.setupResize(container)
 
+    // Wire stats panel records fetching
+    this.statsPanel.setOnFetchRecords(async () => {
+      try {
+        const response = await this.apiFetch('/api/records')
+        if (response.ok) return await response.json() as CheatRecordEntry[]
+      } catch { /* fallback */ }
+      // Fallback: collect from in-memory player records
+      const records: CheatRecordEntry[] = []
+      for (const [playerId, items] of this.playerRecords) {
+        const info = this.playerDataMap.get(playerId)
+        for (const item of items) records.push({ ...item, playerName: info?.name ?? playerId })
+      }
+      return records
+    })
+
     // Async: load assets then build scene
     this.initPromise = this.initScene()
   }
@@ -186,7 +201,11 @@ export class MainScene {
   }
 
   private async initScene(): Promise<void> {
-    await this.assetLoader.preload()
+    const [{ PostProcessing }] = await Promise.all([
+      import('./visual/PostProcessing.js'),
+      this.assetLoader.preload(),
+    ])
+    this.postProcessing = new PostProcessing(this.renderer, this.scene, this.camera)
 
     this.townBuilder.build(this.assetLoader)
     const lightingRefs = this.townBuilder.getLightingRefs()
@@ -210,6 +229,14 @@ export class MainScene {
   }
 
   private async initAudio(): Promise<void> {
+    const [{ AlertSound }, { getAudioSystem }, { BGMManager }, { AmbientSoundManager }] = await Promise.all([
+      import('../audio/AlertSound.js'), import('../audio/AudioSystem.js'),
+      import('../audio/BGMManager.js'), import('../audio/AmbientSoundManager.js'),
+    ])
+    this.alertSound = new AlertSound()
+    this.audioSystem = getAudioSystem()
+    this.bgmManager = new BGMManager()
+    this.ambientSound = new AmbientSoundManager()
     await this.audioSystem.init()
     await this.audioSystem.preload()
     const actx = this.audioSystem.getAudioContext()
@@ -320,7 +347,7 @@ export class MainScene {
           this.playerDetailCard.show(info, records)
         }
       }
-      this.alertSound.playBanSound()
+      this.alertSound?.playBanSound()
       this.showToast('封禁指令已发送', 'success')
     })
 
@@ -345,22 +372,44 @@ export class MainScene {
       this.showToast('白名单指令已发送', 'success')
     })
 
-    this.recordsArchive.setOnFetchRecords(async () => {
-      try {
-        const resp = await this.apiFetch('/api/records')
-        if (resp.ok) {
-          return await resp.json() as CheatRecordEntry[]
-        }
-      } catch { /* fallback */ }
-      const allRecords: CheatRecordEntry[] = []
-      for (const [playerId, records] of this.playerRecords) {
-        const info = this.playerDataMap.get(playerId)
-        for (const r of records) {
-          allRecords.push({ ...r, playerName: info?.name ?? playerId })
-        }
-      }
-      return allRecords
+    this.casePanel.setOnFetch(async () => {
+      const response = await this.apiFetch('/api/cases?status=pending')
+      if (!response.ok) return []
+      return await response.json() as InvestigationCaseSummary[]
     })
+
+    this.casePanel.setOnFocus((investigationCase) => {
+      const npcId = investigationCase.npcId ?? `player_${investigationCase.playerId.slice(0, 8)}`
+      const npc = this.npcManager.get(npcId)
+      if (npc) {
+        const position = npc.getPosition()
+        this.cameraController.animateTo(new THREE.Vector3(position.x, 0, position.z))
+      }
+      const playerInfo = this.playerDataMap.get(npcId)
+      if (playerInfo) {
+        this.playerDetailCard.show(playerInfo, this.playerRecords.get(npcId) ?? [])
+        this.refreshPlayerDetail(npcId)
+      }
+      void this.openEvidenceTimeline(investigationCase).catch(error => {
+        console.warn('[MainScene] Failed to load case evidence:', error)
+      })
+    })
+
+    this.casePanel.setOnReview(async (caseId, decision) => {
+      await this.reviewInvestigationCase(caseId, decision)
+    })
+
+    this.shiftBriefing.setOnFetch(async () => {
+      const response = await this.apiFetch('/api/operations/summary')
+      if (!response.ok) return null
+      return await response.json() as OfflineSummary
+    })
+    this.shiftBriefing.setOnAcknowledge(async () => {
+      const response = await this.apiFetch('/api/operations/summary/acknowledge', { method: 'POST' })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    })
+    this.shiftBriefing.setOnViewCases(() => this.casePanel.open())
+
   }
 
   private setupCanvasClick(): void {
@@ -450,8 +499,7 @@ export class MainScene {
           document.getElementById('alert-sound-toggle')!.click()
           break
         case 'Escape':
-          if (this.recordsArchive.isVisible()) this.recordsArchive.hide()
-          else if (this.playerDetailCard.isVisible()) this.playerDetailCard.hide()
+          if (this.playerDetailCard.isVisible()) this.playerDetailCard.hide()
           else if (this.banDialog['overlay'].classList.contains('visible')) this.banDialog.hide()
           break
       }
@@ -464,7 +512,7 @@ export class MainScene {
       const h = container.clientHeight
       this.renderer.setSize(w, h)
       this.cameraController.resize(w, h)
-      this.postProcessing.resize(w, h)
+      this.postProcessing?.resize(w, h)
     }
     window.addEventListener('resize', onResize)
   }
@@ -479,6 +527,12 @@ export class MainScene {
 
   setApiToken(token: string): void {
     this.apiToken = token
+    void this.casePanel.refresh().catch(error => {
+      console.warn('[MainScene] Failed to load investigation cases:', error)
+    })
+    void this.shiftBriefing.refresh().catch(error => {
+      console.warn('[MainScene] Failed to load shift briefing:', error)
+    })
   }
 
   private apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
@@ -665,50 +719,7 @@ export class MainScene {
 
   onNpcDespawn(npcId: string): void {
     console.log(`[MainScene] onNpcDespawn: npcId=${npcId}`)
-    const npc = this.npcManager.get(npcId)
-    const info = this.playerDataMap.get(npcId)
-
-    // 核心防御：被封禁的玩家的 NPC 绝不能被 despawn
-    // 管理员需要通过交互 NPC 来执行解封操作
-    // 检查条件：(1) phase 为 punishing (2) NPC 标记为 detained (3) banStatus 显示封禁中
-    const isPunishing = info?.phase === 'punishing' || npc?.phase === 'punishing'
-    const isDetained = npc?.detained
-    const isBanned = info?.banStatus?.isBanned
-
-    if (isPunishing || isDetained || isBanned) {
-      console.log(`[MainScene] onNpcDespawn: BLOCKING despawn for banned/detained NPC npcId=${npcId}, phase=${info?.phase}, detained=${npc?.detained}, isBanned=${isBanned}`)
-      if (info) {
-        info.phase = 'offline'
-      }
-      if (npc) {
-        // 确保 detained 标志为 true，保持关押区漫游
-        npc.detained = true
-        npc.transitionTo('offline')
-      }
-      // NPC 保留在场景中，继续关押区漫游，管理员可交互
-      return
-    }
-
-    // 防御：解封后的 NPC 处于 normal phase 但玩家仍离线，
-    // 此时若收到延迟的 npc_despawn（如重连状态同步），不应移除
-    // 检查 banStatus：如果玩家刚被解封（isBanned=false 且有历史记录），保留 NPC
-    if (info && info.banStatus && !info.banStatus.isBanned && info.banStatus.bannedAt) {
-      console.log(`[MainScene] onNpcDespawn: blocking despawn for recently-unbanned NPC npcId=${npcId}`)
-      if (npc) {
-        npc.transitionTo('offline')
-      }
-      info.phase = 'offline'
-      return
-    }
-
-    // 正常退出：立即移除 NPC（1 秒内）
-    console.log(`[MainScene] onNpcDespawn: normal exit, removing npcId=${npcId}`)
-    if (npc) {
-      this.npcManager.remove(npcId)
-    }
-    if (info) {
-      info.phase = 'offline'
-    }
+    this.npcManager.remove(npcId)
     this.playerDataMap.delete(npcId)
   }
 
@@ -833,9 +844,9 @@ export class MainScene {
     const playerName = info?.name ?? playerId
     this.alertPanel.addAlert(playerId, playerName, cheatType, confidence, message)
     if (!this.alertPanel.isMuted()) {
-      this.alertSound.playAlert(confidence)
+      this.alertSound?.playAlert(confidence)
     }
-    this.audioSystem.play('alert')
+    this.audioSystem?.play('alert')
     this.statsPanel.addHourlyAlert()
 
     // VFX for high confidence alerts
@@ -957,9 +968,9 @@ export class MainScene {
       this.vfxSystem.spawn.errorLightning(pos)
     }
     if (!this.alertPanel.isMuted()) {
-      this.alertSound.playBanSound()
+      this.alertSound?.playBanSound()
     }
-    this.audioSystem.play('ban')
+    this.audioSystem?.play('ban')
   }
 
   onFreezeEffect(npcId: string): void {
@@ -968,7 +979,7 @@ export class MainScene {
       npc.setGlow('cyan')
       npc.setFrozen(true)
     }
-    this.audioSystem.play('freeze')
+    this.audioSystem?.play('freeze')
   }
 
   onRecordAdd(playerId: string, cheatType: CheatType, timestamp: number, npcId?: string): void {
@@ -996,6 +1007,60 @@ export class MainScene {
 
     // 异步从 API 获取完整记录（包含 evidence 和 vp）
     this.refreshPlayerDetail(playerId)
+  }
+
+  private async openEvidenceTimeline(investigationCase: InvestigationCaseSummary): Promise<void> {
+    if (!this.evidenceTimeline) {
+      const { EvidenceTimeline } = await import('../ui/EvidenceTimeline.js')
+      const timeline = new EvidenceTimeline()
+      timeline.setOnFetch(async caseId => {
+        const response = await this.apiFetch(`/api/cases/${encodeURIComponent(caseId)}/evidence`)
+        if (response.status === 404) return null
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        return await response.json() as CaseEvidenceSnapshot
+      })
+      this.evidenceTimeline = timeline
+    }
+    await this.evidenceTimeline.open(investigationCase)
+  }
+
+  onInvestigationCase(event: InvestigationCaseSummary & { action: 'opened' | 'updated' | 'resolved' }): void {
+    this.casePanel.upsert(event)
+
+    const npcId = event.npcId ?? `player_${event.playerId.slice(0, 8)}`
+    const npc = this.npcManager.get(npcId)
+    if (!npc) return
+
+    if (event.status === 'dismissed' || event.status === 'confirmed') {
+      npc.setEmoji(null)
+      npc.setGlow('none')
+      return
+    }
+
+    npc.setEmoji(event.riskLevel === 'critical' ? '⚠' : '⌕')
+    npc.setGlow(event.riskLevel === 'critical' ? 'red' : event.riskLevel === 'high' ? 'gold' : 'yellow')
+  }
+
+  private async reviewInvestigationCase(caseId: string, decision: InvestigationDecision): Promise<void> {
+    try {
+      const response = await this.apiFetch(`/api/cases/${encodeURIComponent(caseId)}/review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision, reviewedBy: 'admin' }),
+      })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const investigationCase = await response.json() as InvestigationCaseSummary
+      this.casePanel.upsert(investigationCase)
+      const labels: Record<InvestigationDecision, string> = {
+        confirm: '案件已确认，等待管理员选择处罚',
+        dismiss: '案件已排除',
+        monitor: '已转入继续观察',
+      }
+      this.showToast(labels[decision], 'success')
+    } catch (error) {
+      console.error('[MainScene] Failed to review investigation case:', error)
+      this.showToast('案件复核失败，请检查服务连接', 'error')
+    }
   }
 
   onPhaseChange(playerId: string, oldPhase: PlayerPhase, newPhase: PlayerPhase, reason: string, vpTotal: number, cheatType?: CheatType, npcId?: string): void {
@@ -1114,7 +1179,7 @@ export class MainScene {
     }
 
     // 播放处罚音效
-    this.alertSound.playBanSound()
+    this.alertSound?.playBanSound()
 
     // 显示处罚通知（使用现有 alertPanel）
     const levelLabels: Record<string, string> = {
@@ -1405,8 +1470,8 @@ export class MainScene {
     // Audio updates
     const period = this.hourToPeriod(this.timeOfDayLighting.getGameHour())
     const weather = this.weatherEffects.getWeather()
-    this.bgmManager.update(delta, period)
-    this.ambientSound.update(delta, weather, period)
+    this.bgmManager?.update(delta, period)
+    this.ambientSound?.update(delta, weather, period)
 
     // Camera follow tracked player
     if (this.isFollowing && this.trackedPlayerId) {
@@ -1426,8 +1491,12 @@ export class MainScene {
     }
 
     // Render with post-processing (sync active camera)
-    this.postProcessing.updateCamera(this.cameraController.getCamera())
-    this.postProcessing.render()
+    if (this.postProcessing) {
+      this.postProcessing.updateCamera(this.cameraController.getCamera())
+      this.postProcessing.render()
+    } else {
+      this.renderer.render(this.scene, this.cameraController.getCamera())
+    }
   }
 
   private async pollStats(): Promise<void> {
@@ -1456,11 +1525,14 @@ export class MainScene {
   }
 
   dispose(): void {
+    this.casePanel.destroy()
+    this.shiftBriefing.destroy()
+    this.evidenceTimeline?.destroy()
     this.npcManager.destroy()
     this.vfxSystem.dispose()
     this.weatherEffects.dispose()
     this.cameraController.dispose()
-    this.postProcessing.dispose()
+    this.postProcessing?.dispose()
     this.vehicleManager.dispose()
     this.renderer.dispose()
     this.scene.traverse((child) => {

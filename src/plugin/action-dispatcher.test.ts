@@ -4,7 +4,7 @@ import { ActionDispatcher } from './action-dispatcher.js'
 
 function createWsServer(): WsServer {
   return {
-    sendToSpigot: vi.fn(),
+    sendToSpigot: vi.fn(() => true),
   } as unknown as WsServer
 }
 
@@ -23,6 +23,14 @@ describe('ActionDispatcher', () => {
 
     expect(onAck).not.toHaveBeenCalled()
     expect(dispatcher.getPendingCount()).toBe(0)
+  })
+
+  it('tracks queued, delivered, and executed action states', () => {
+    const dispatcher = new ActionDispatcher(createWsServer())
+    dispatcher.dispatch({ type: 'kick', actionId: 'kick-1', playerId: 'player-1' })
+    expect(dispatcher.getActionAudit()[0].status).toBe('delivered')
+    dispatcher.ack('kick-1')
+    expect(dispatcher.getActionAudit()[0].status).toBe('executed')
   })
 
   it('confirms a penalty only when its primary action is acknowledged', () => {

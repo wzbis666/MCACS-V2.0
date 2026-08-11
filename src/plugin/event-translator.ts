@@ -48,6 +48,9 @@ export function translateSpigotMessage(msg: SpigotMessage): AntiCheatEvent | nul
         vy: Number(msg.vy ?? 0),
         vz: Number(msg.vz ?? 0),
         onGround: Boolean(msg.onGround),
+        ping: raw.ping !== undefined && raw.ping !== null ? Number(raw.ping) : undefined,
+        statusEffects: Array.isArray(raw.statusEffects) ? raw.statusEffects.map(String) : undefined,
+        exemptions: Array.isArray(raw.exemptions) ? raw.exemptions.map(String) : undefined,
       }
 
     case 'player_combat':
@@ -68,6 +71,26 @@ export function translateSpigotMessage(msg: SpigotMessage): AntiCheatEvent | nul
         action: msg.action === 'place' ? 'place' : 'break',
         blockType: String(msg.blockType ?? ''),
         speed: Number(msg.speed ?? 0),
+        x: raw.x === undefined ? undefined : Number(raw.x),
+        y: raw.y === undefined ? undefined : Number(raw.y),
+        z: raw.z === undefined ? undefined : Number(raw.z),
+        exposedFaces: raw.exposedFaces === undefined ? undefined : Number(raw.exposedFaces),
+        nearbyOres: Array.isArray(raw.nearbyOres)
+          ? raw.nearbyOres.map(item => {
+              const ore = item as Record<string, unknown>
+              return {
+                type: String(ore.type ?? ''),
+                dx: Number(ore.dx ?? 0),
+                dy: Number(ore.dy ?? 0),
+                dz: Number(ore.dz ?? 0),
+                exposed: Boolean(ore.exposed),
+              }
+            })
+          : undefined,
+        yaw: raw.yaw === undefined ? undefined : Number(raw.yaw),
+        pitch: raw.pitch === undefined ? undefined : Number(raw.pitch),
+        placedFace: raw.placedFace === undefined ? undefined : String(raw.placedFace),
+        placementIntervalMs: raw.placementIntervalMs === undefined ? undefined : Number(raw.placementIntervalMs),
       }
 
     case 'player_action':
@@ -117,6 +140,18 @@ export function translateSpigotMessage(msg: SpigotMessage): AntiCheatEvent | nul
         playerId: normalizePlayerId(raw),
         name: String(raw.name ?? ''),
         source: String(raw.source ?? 'anticheat'),
+      }
+
+    case 'grim_violation':
+      return {
+        type: 'grim.violation',
+        playerId: normalizePlayerId(raw),
+        name: String(raw.name ?? ''),
+        checkName: String(raw.checkName ?? 'Unknown'),
+        violationLevel: Number(raw.violationLevel ?? 0),
+        severity: String(raw.severity) === 'high' ? 'high' : 'standard',
+        threshold: Number(raw.threshold ?? 0),
+        timestamp: Number(raw.timestamp ?? Date.now()),
       }
 
     default:

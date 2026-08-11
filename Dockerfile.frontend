@@ -3,7 +3,7 @@
 # 使用: docker compose --profile full up -d
 # ============================================================
 
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 WORKDIR /app
 COPY town-frontend/package.json town-frontend/package-lock.json* ./
 RUN npm ci 2>/dev/null || npm install

@@ -15,9 +15,21 @@ interface QueuedAction {
   penaltyId?: string
 }
 
+export type ActionDeliveryStatus = 'queued' | 'delivered' | 'executed'
+export interface ActionAuditEntry {
+  actionId: string
+  action: SpigotAction
+  status: ActionDeliveryStatus
+  queuedAt: number
+  deliveredAt?: number
+  executedAt?: number
+  attempts: number
+}
+
 export class ActionDispatcher {
   private wsServer: WsServer
   private actionLog: Array<{ action: SpigotAction; timestamp: number }> = []
+  private actionAudit: ActionAuditEntry[] = []
   /** 待确认队列：actionId → QueuedAction */
   private pendingAcks = new Map<string, QueuedAction>()
   private retryIntervalMs: number
@@ -43,6 +55,9 @@ export class ActionDispatcher {
   dispatch(action: SpigotAction, penaltyId?: string): void {
     const timestamp = Date.now()
     this.actionLog.push({ action, timestamp })
+    const auditId = action.actionId ?? `local-${timestamp}-${this.actionAudit.length}`
+    this.actionAudit.push({ actionId: auditId, action: structuredClone(action), status: 'queued', queuedAt: timestamp, attempts: 1 })
+    if (this.actionAudit.length > 1000) this.actionAudit = this.actionAudit.slice(-1000)
     if (this.actionLog.length > 1000) {
       this.actionLog = this.actionLog.slice(-1000)
     }
@@ -65,6 +80,11 @@ export class ActionDispatcher {
   ack(actionId: string): void {
     const queued = this.pendingAcks.get(actionId)
     this.pendingAcks.delete(actionId)
+    const audit = [...this.actionAudit].reverse().find(entry => entry.actionId === actionId)
+    if (audit) {
+      audit.status = 'executed'
+      audit.executedAt = Date.now()
+    }
     // Only the primary action of an evaluated penalty carries penaltyId.
     // VP updates, warnings, freezes, and supplementary actions must not reset VP.
     if (queued?.penaltyId && this.onAckCallback) {
@@ -117,7 +137,20 @@ export class ActionDispatcher {
 
   private doSend(action: SpigotAction): void {
     console.log(`[ActionDispatcher] Dispatching ${action.type} for player ${action.playerId}`)
-    this.wsServer.sendToSpigot(action)
+    const delivered = this.wsServer.sendToSpigot(action)
+    const actionId = action.actionId
+    const audit = actionId
+      ? [...this.actionAudit].reverse().find(entry => entry.actionId === actionId)
+      : this.actionAudit[this.actionAudit.length - 1]
+    if (audit) {
+      audit.attempts = this.pendingAcks.get(actionId ?? '')?.attempts ?? audit.attempts
+      if (delivered) {
+        audit.status = 'delivered'
+        audit.deliveredAt = Date.now()
+      } else {
+        audit.status = 'queued'
+      }
+    }
   }
 
   getRecentActions(limit: number = 50): Array<{ action: SpigotAction; timestamp: number }> {
@@ -126,6 +159,10 @@ export class ActionDispatcher {
 
   getPendingCount(): number {
     return this.pendingAcks.size
+  }
+
+  getActionAudit(limit: number = 100): ActionAuditEntry[] {
+    return this.actionAudit.slice(-Math.max(1, limit)).map(entry => structuredClone(entry))
   }
 
   destroy(): void {

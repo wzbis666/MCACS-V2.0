@@ -9,6 +9,15 @@ import type { AlertManager } from './alert-manager.js'
 import type { AppealManager } from './appeal-manager.js'
 import type { IPTracker } from './ip-tracker.js'
 import type { VPManager } from './vp-manager.js'
+import type {
+  InvestigationCase,
+  InvestigationCaseManager,
+  InvestigationCaseStatus,
+  InvestigationDecision,
+} from './investigation-case-manager.js'
+import type { OperationsSummaryManager } from './operations-summary-manager.js'
+import type { EvidenceBufferManager } from './evidence-buffer-manager.js'
+import type { WarningTracker } from './warning-tracker.js'
 import type { SpigotAction, RecordsQuery } from '../contracts/index.js'
 
 const PORT = Number(process.env.ACS_HTTP_PORT ?? 55210)
@@ -36,6 +45,11 @@ interface RouteContext {
   appealManager?: AppealManager
   ipTracker?: IPTracker
   vpManager?: VPManager
+  investigationCaseManager?: InvestigationCaseManager
+  operationsSummaryManager?: OperationsSummaryManager
+  evidenceBufferManager?: EvidenceBufferManager
+  warningTracker?: WarningTracker
+  onInvestigationCaseChanged?: (investigationCase: InvestigationCase) => void
   /** MonitorBridge 引用，用于 npcId→playerId 解析 */
   resolvePlayerId?: (npcId: string) => string | undefined
   /** MonitorBridge 引用，用于 playerId→npcId 解析 */
@@ -321,6 +335,131 @@ export class EditorServe {
         return
       }
 
+      if (path === '/api/actions/audit' && request.method === 'GET') {
+        this.json(reply, this.ctx.actionDispatcher?.getActionAudit() ?? [])
+        return
+      }
+
+      // GET /api/cases — investigation cases for asynchronous administrator review
+      if (path === '/api/cases' && request.method === 'GET') {
+        if (!this.ctx.investigationCaseManager) {
+          this.json(reply, [])
+          return
+        }
+        const status = this.getUrl(request).searchParams.get('status')
+        const cases = status === 'pending'
+          ? this.ctx.investigationCaseManager.getPendingCases()
+          : this.ctx.investigationCaseManager.getCases(status as InvestigationCaseStatus | undefined)
+        this.json(reply, cases.map(investigationCase => ({
+          ...investigationCase,
+          npcId: this.ctx.resolveNpcId?.(investigationCase.playerId)
+            ?? `player_${investigationCase.playerId.slice(0, 8)}`,
+        })))
+        return
+      }
+
+      if (path === '/api/cases/stats' && request.method === 'GET') {
+        const stats = this.ctx.investigationCaseManager?.getStats() ?? {
+          total: 0,
+          pending: 0,
+          confirmed: 0,
+          dismissed: 0,
+          monitoring: 0,
+        }
+        this.json(reply, {
+          ...stats,
+          quality: this.ctx.investigationCaseManager?.getQualityMetrics() ?? null,
+        })
+        return
+      }
+
+      if (path === '/api/cases/quality' && request.method === 'GET') {
+        this.json(reply, this.ctx.investigationCaseManager?.getQualityMetrics() ?? {
+          reviewedCases: 0,
+          confirmedCases: 0,
+          dismissedCases: 0,
+          confirmationRate: null,
+          dismissalRate: null,
+          averageHandlingTimeMs: null,
+          byDetector: {},
+        })
+        return
+      }
+
+      const caseEvidenceMatch = path.match(/^\/api\/cases\/([^/]+)\/evidence$/)
+      if (caseEvidenceMatch && request.method === 'GET') {
+        if (!this.ctx.evidenceBufferManager) {
+          this.json(reply, { error: 'EvidenceBufferManager not available' }, 503)
+          return
+        }
+        const evidence = this.ctx.evidenceBufferManager.getCaseEvidence(decodeURIComponent(caseEvidenceMatch[1]))
+        if (!evidence) {
+          this.json(reply, { error: 'Case evidence not found' }, 404)
+          return
+        }
+        this.json(reply, evidence)
+        return
+      }
+
+      if (path === '/api/operations/summary' && request.method === 'GET') {
+        if (!this.ctx.operationsSummaryManager) {
+          this.json(reply, { error: 'OperationsSummaryManager not available' }, 503)
+          return
+        }
+        this.json(reply, {
+          ...this.ctx.operationsSummaryManager.getOfflineSummary(),
+          pendingCases: this.ctx.investigationCaseManager?.getPendingCases().length ?? 0,
+          quality: this.ctx.investigationCaseManager?.getQualityMetrics() ?? null,
+        })
+        return
+      }
+
+      if (path === '/api/operations/summary/acknowledge' && request.method === 'POST') {
+        if (!this.ctx.operationsSummaryManager) {
+          this.json(reply, { error: 'OperationsSummaryManager not available' }, 503)
+          return
+        }
+        this.json(reply, {
+          acknowledged: true,
+          summary: this.ctx.operationsSummaryManager.acknowledgeViewed(),
+        })
+        return
+      }
+
+      const caseReviewMatch = path.match(/^\/api\/cases\/([^/]+)\/review$/)
+      if (caseReviewMatch && request.method === 'POST') {
+        if (!this.ctx.investigationCaseManager) {
+          this.json(reply, { error: 'InvestigationCaseManager not available' }, 503)
+          return
+        }
+        const { decision, reviewedBy, note } = await this.readJsonBody<{
+          decision?: InvestigationDecision
+          reviewedBy?: string
+          note?: string
+        }>(request)
+        if (!decision || !['confirm', 'dismiss', 'monitor'].includes(decision)) {
+          this.json(reply, { error: 'decision must be confirm, dismiss, or monitor' }, 400)
+          return
+        }
+        const investigationCase = this.ctx.investigationCaseManager.reviewCase(
+          decodeURIComponent(caseReviewMatch[1]),
+          decision,
+          reviewedBy ?? 'admin',
+          note ?? '',
+        )
+        if (!investigationCase) {
+          this.json(reply, { error: 'Investigation case not found' }, 404)
+          return
+        }
+        this.ctx.onInvestigationCaseChanged?.(investigationCase)
+        this.json(reply, {
+          ...investigationCase,
+          npcId: this.ctx.resolveNpcId?.(investigationCase.playerId)
+            ?? `player_${investigationCase.playerId.slice(0, 8)}`,
+        })
+        return
+      }
+
       // ── 申诉 API ──
 
       // GET /api/appeals — 获取申诉列表
@@ -376,7 +515,10 @@ export class EditorServe {
         }
         const appealId = decodeURIComponent(approveMatch[1])
         const { reviewedBy, note } = await this.readJsonBody<{ reviewedBy?: string; note?: string }>(request)
-        const record = this.ctx.appealManager.approveAppeal(appealId, reviewedBy ?? 'admin', note ?? '')
+        const reviewer = reviewedBy ?? 'admin'
+        const record = this.ctx.appealManager.approveAppeal(appealId, reviewer, note ?? '', (playerId) => {
+          this.applyApprovedAppeal(playerId, reviewer, note ?? '')
+        })
         if (record) {
           this.json(reply, record)
         } else {
@@ -462,14 +604,7 @@ export class EditorServe {
           return
         }
         const result = this.ctx.appealManager.approveAppeal(appealId, reviewerId, note ?? '', (playerId) => {
-          this.ctx.banManager.unbanPlayer(playerId, 'appeal')
-          this.ctx.vpManager?.clearVP(playerId)
-          this.ctx.actionDispatcher?.dispatch({
-            type: 'unban',
-            actionId: `unban-appeal-${Date.now()}`,
-            playerId,
-            reason: 'Appeal approved',
-          })
+          this.applyApprovedAppeal(playerId, reviewerId, note ?? '')
         })
         if (!result) {
           this.json(reply, { error: 'Appeal not found' }, 404)
@@ -556,6 +691,26 @@ export class EditorServe {
       console.error('[EditorServe] API error:', err)
       this.json(reply, { error: 'Internal server error' }, 500)
     }
+  }
+
+  private applyApprovedAppeal(playerId: string, reviewerId: string, note: string): void {
+    this.ctx.banManager.unbanPlayer(playerId, 'appeal')
+    this.ctx.vpManager?.clearVP(playerId)
+    this.ctx.warningTracker?.clearPlayer(playerId)
+    const dismissedCases = this.ctx.investigationCaseManager?.dismissPlayerCases(
+      playerId,
+      reviewerId,
+      note || 'Appeal approved',
+    ) ?? []
+    for (const investigationCase of dismissedCases) {
+      this.ctx.onInvestigationCaseChanged?.(investigationCase)
+    }
+    this.ctx.actionDispatcher?.dispatch({
+      type: 'unban',
+      actionId: `unban-appeal-${Date.now()}`,
+      playerId,
+      reason: 'Appeal approved',
+    })
   }
 
   private serveStatic(path: string, reply: FastifyReply): void {
