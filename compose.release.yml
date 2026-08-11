@@ -13,8 +13,8 @@ services:
       ACS_AUTH_SECRET: ${ACS_AUTH_SECRET:?Set ACS_AUTH_SECRET in .env}
       ACS_HTTP_HOST: 0.0.0.0
       ACS_WS_HOST: 0.0.0.0
-      ACS_MODE: ${ACS_MODE:-monitor}
-      ACS_PRESET: ${ACS_PRESET:-balanced}
+      ACS_MODE: ${ACS_MODE:-dashboard}
+      ACS_PRESET: ${ACS_PRESET:-survival}
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - ./data:/app/data
