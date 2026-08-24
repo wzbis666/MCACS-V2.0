@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import { ADMIN_CHARACTER_KEY, type AssetLoader } from '../scene/AssetLoader.js'
 import type { NPCManager } from './NPCManager.js'
 
-const DEFAULT_POSITION = { x: 18, y: 0, z: 13 }
+const DEFAULT_POSITION = { x: 18, y: 0, z: 16 }
 const WALK_SPEED = 2.5
 /** 跟随距离：NPC 保持在管理员后方的距离（单位：场景单位） */
 const FOLLOW_DISTANCE = 1.5
@@ -19,7 +19,7 @@ const AVOIDANCE_STRENGTH = 3.0
 const STEER_SMOOTHING = 5.0
 
 const PATROL_WAYPOINTS = [
-  { x: 18, z: 13 },
+  { x: 18, z: 16 },
   { x: 15, z: 11 },
   { x: 21, z: 11 },
   { x: 21, z: 15 },
@@ -331,8 +331,14 @@ export class TownManagerNpc {
 
       // Move
       const moveSpeed = speed * dt
-      this.group.position.x += finalDirX * moveSpeed
-      this.group.position.z += finalDirZ * moveSpeed
+      const nextX = curX + finalDirX * moveSpeed
+      const nextZ = curZ + finalDirZ * moveSpeed
+      if (this.npcManager.isHardCollision(nextX, nextZ)) {
+        this.onWalkStepComplete(token)
+        return
+      }
+      this.group.position.x = nextX
+      this.group.position.z = nextZ
 
       requestAnimationFrame(animate)
     }
@@ -572,8 +578,14 @@ export class TownManagerNpc {
 
         // Move in the smoothed facing direction
         const moveSpeed = speed * dt
-        this.group.position.x += finalDirX * moveSpeed
-        this.group.position.z += finalDirZ * moveSpeed
+        const nextX = curX + finalDirX * moveSpeed
+        const nextZ = curZ + finalDirZ * moveSpeed
+        if (this.npcManager.isHardCollision(nextX, nextZ)) {
+          resolve()
+          return
+        }
+        this.group.position.x = nextX
+        this.group.position.z = nextZ
 
         // Check if we've effectively reached the target
         const newDistToTarget = Math.sqrt(

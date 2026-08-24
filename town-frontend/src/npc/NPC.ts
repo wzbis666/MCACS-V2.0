@@ -53,6 +53,8 @@ export class NPC {
   private isFrozen: boolean = false
   /** Collision check callback — returns true if position is blocked */
   private collisionCheck: ((x: number, z: number) => boolean) | null = null
+  /** Collision that remains active during escorts (for permanent town obstacles). */
+  private hardCollisionCheck: ((x: number, z: number) => boolean) | null = null
   /** Whether collision checking is active (disabled during escort) */
   private collisionEnabled: boolean = true
 
@@ -336,6 +338,10 @@ export class NPC {
   /** Set collision check callback — returns true if position is inside a building/blocked area */
   setCollisionCheck(check: (x: number, z: number) => boolean): void {
     this.collisionCheck = check
+  }
+
+  setHardCollisionCheck(check: (x: number, z: number) => boolean): void {
+    this.hardCollisionCheck = check
   }
 
   /** Enable or disable collision checking (disable during escort to allow path through buildings) */
@@ -997,7 +1003,9 @@ export class NPC {
 
         // Collision check: if next position is inside a building, stop and arrive
         // Skip collision check during escort (collisionEnabled = false)
-        if (this.collisionEnabled && this.collisionCheck && this.collisionCheck(nextX, nextZ)) {
+        const hitsHardObstacle = this.hardCollisionCheck?.(nextX, nextZ) ?? false
+        const hitsOptionalObstacle = this.collisionEnabled && (this.collisionCheck?.(nextX, nextZ) ?? false)
+        if (hitsHardObstacle || hitsOptionalObstacle) {
           // Don't move into the building — arrive at current position
           this.finishMove('arrived')
         } else {

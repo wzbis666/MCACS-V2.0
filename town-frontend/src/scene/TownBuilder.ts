@@ -3,6 +3,7 @@
 
 import * as THREE from 'three'
 import { AssetLoader } from './AssetLoader'
+import { isInsideFountainExclusionZone } from './TownCollision.js'
 
 /* ───────── Building Definitions ───────── */
 
@@ -169,6 +170,11 @@ export class TownBuilder {
       }
     }
     return null
+  }
+
+  /** Check the fountain/capybara footprint, including character clearance. */
+  isInsideFountain(x: number, z: number): boolean {
+    return isInsideFountainExclusionZone(x, z)
   }
 
   /** Get the door position for a building */

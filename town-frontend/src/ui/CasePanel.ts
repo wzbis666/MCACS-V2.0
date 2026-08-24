@@ -286,7 +286,6 @@ export class CasePanel {
         .case-desk-review button:hover { color: #1a1f2e; border-color: rgba(45,166,110,.4); }
         .case-desk-review button.confirm { color: #2da66e; background: rgba(45,166,110,.1); border-color: rgba(45,166,110,.25); }
       }
-      @media (max-width: 640px) { #case-desk { right: 10px; bottom: 10px; width: calc(100vw - 20px); max-height: calc(100vh - 20px); } #case-desk-toggle { right: 12px; bottom: 12px; } }
     `
     document.head.appendChild(style)
   }
