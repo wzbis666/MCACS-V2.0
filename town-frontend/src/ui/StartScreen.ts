@@ -12,7 +12,6 @@ export class StartScreen {
   private readonly menuItems: HTMLButtonElement[]
   private readonly statusDot: HTMLElement
   private readonly statusText: HTMLElement
-  private readonly nodeStatus: HTMLElement
   private readonly clockText: HTMLElement
   private readonly modal: HTMLElement
   private readonly modalTitle: HTMLElement
@@ -26,110 +25,105 @@ export class StartScreen {
     this.onStart = options.onStart
     this.root = document.createElement('section')
     this.root.id = 'start-screen'
-    this.root.setAttribute('aria-label', 'MCACS 游戏启动界面')
+    this.root.setAttribute('aria-label', 'MCACS 安全小镇开始界面')
     this.root.innerHTML = `
-      <div class="game-noise" aria-hidden="true"></div>
-      <div class="game-scan" aria-hidden="true"></div>
-      <div class="game-reticle" aria-hidden="true">
-        <span class="reticle-ring"></span><span class="reticle-cross"></span>
-        <small>PATROL CORE · LOCKED</small>
-      </div>
+      <div class="town-shade" aria-hidden="true"></div>
+      <div class="floating-leaves" aria-hidden="true"><i></i><i></i><i></i></div>
 
-      <div class="game-shell">
-        <i class="hud-corner top-left"></i><i class="hud-corner top-right"></i>
-        <i class="hud-corner bottom-left"></i><i class="hud-corner bottom-right"></i>
+      <header class="town-brand">
+        <div class="town-mark" aria-hidden="true">
+          <span class="mark-roof"></span><span class="mark-house"></span><b>M</b>
+        </div>
+        <div><small>MCACS</small><strong>反作弊安全小镇</strong><span>MINECRAFT ANTI-CHEAT TOWN</span></div>
+      </header>
 
-        <header class="game-topbar">
-          <div class="game-identity">
-            <div class="voxel-badge" aria-hidden="true"><span></span><span></span><span></span><b>M</b></div>
-            <div><strong>MCACS</strong><small>ANTI-CHEAT COMMAND SYSTEM</small></div>
+      <aside class="town-weather" aria-label="小镇时间">
+        <span class="weather-sun" aria-hidden="true"></span>
+        <div><small>小镇晴朗 · 今日值班</small><b id="town-clock">--:--</b></div>
+        <em>v0.1.1</em>
+      </aside>
+
+      <button type="button" class="town-hotspot archive" data-start-action="about" aria-label="查看档案馆信息">
+        <span class="hotspot-pin"></span><span><b>档案馆</b><small>看看小镇档案</small></span>
+      </button>
+      <button type="button" class="town-hotspot monitor" data-start-action="start" aria-label="进入监控中心">
+        <span class="hotspot-pin"></span><span><b>监控中心</b><small>点击进入值班</small></span>
+      </button>
+
+      <main class="town-stage">
+        <section class="town-welcome">
+          <div class="welcome-ribbon"><span>欢迎回来</span><i></i><b>管理员</b></div>
+          <h1><small>守护每一次公平冒险</small><span>反作弊</span><strong>安全小镇</strong></h1>
+          <p>异常出现时，小镇居民会把线索送到你的值班台。观察、复核，然后做出有依据的决定。</p>
+
+          <nav class="town-menu" aria-label="小镇菜单">
+            <button type="button" class="town-menu-item primary" data-start-action="start">
+              <span class="menu-icon">▶</span>
+              <span class="menu-copy"><b>开始今天的值班</b><small>进入实时监控小镇</small></span>
+              <span class="menu-arrow">›</span>
+            </button>
+            <div class="town-menu-secondary">
+              <button type="button" class="town-menu-item" data-start-action="controls">
+                <span class="menu-icon">?</span><span class="menu-copy"><b>玩法说明</b><small>镜头与操作</small></span>
+              </button>
+              <button type="button" class="town-menu-item" data-start-action="about">
+                <span class="menu-icon">i</span><span class="menu-copy"><b>关于小镇</b><small>项目与版本</small></span>
+              </button>
+            </div>
+          </nav>
+
+          <div class="town-status" role="status" aria-live="polite">
+            <span class="town-status-dot" id="start-status-dot"></span>
+            <span id="start-status-text">小镇正在准备开门</span>
+            <kbd>ENTER</kbd>
           </div>
-          <div class="game-node-cluster">
-            <div class="node-signal" aria-hidden="true"><i></i><i></i><i></i></div>
-            <div class="node-info"><small>WORLD NODE</small><b>MC-01 / <em id="game-node-status">BOOTING</em></b></div>
-            <div class="node-info build-info"><small>BUILD</small><b>0.1.1</b></div>
-            <div class="node-info clock-info"><small>LOCAL SHIFT</small><b id="game-clock">--:--</b></div>
+        </section>
+
+        <aside class="notice-board" aria-label="今日值班公告">
+          <div class="board-plank top"></div>
+          <div class="board-title"><span>今日值班板</span><small>DAILY BOARD</small></div>
+          <div class="board-paper">
+            <i class="paper-pin left"></i><i class="paper-pin right"></i>
+            <header><span>安全小镇 · 晨间简报</span><b>准备就绪</b></header>
+            <div class="board-list">
+              <div><span class="board-icon route"><i></i><i></i><i></i></span><p><b>7 条巡逻路线</b><small>飞行、速度、矿洞与战斗区域</small></p></div>
+              <div><span class="board-icon evidence">✓</span><p><b>证据链已整理</b><small>捕获 → 回放 → 复核 → 留痕</small></p></div>
+              <div><span class="board-icon bell">!</span><p><b>告警中心待命</b><small>重要异常会第一时间送达</small></p></div>
+            </div>
+            <blockquote>“今天也要让每一次判断都有依据。”</blockquote>
+            <footer><span>值班员签名</span><b>MCACS</b></footer>
           </div>
-        </header>
+          <div class="board-plank bottom"></div>
+        </aside>
+      </main>
 
-        <main class="game-stage">
-          <section class="game-hero">
-            <div class="game-eyebrow">
-              <span><i></i> TACTICAL OVERWATCH</span><em>SECURITY LEVEL / ALPHA</em>
-            </div>
-            <h1 class="game-title" aria-label="MCACS"><span>MC</span><strong>ACS</strong></h1>
-            <div class="game-subtitle">
-              <span class="subtitle-number">01</span>
-              <div><small>MINECRAFT WORLD SECURITY</small><b>反作弊 <strong>行动中心</strong></b></div>
-            </div>
-            <p class="game-lead">接管监控小镇，锁定异常行为，沿证据链完成复核与处置。</p>
-
-            <nav class="game-menu" aria-label="启动菜单">
-              <button type="button" class="game-menu-item primary" data-start-action="start">
-                <span class="menu-selector"></span><span class="menu-index">01</span>
-                <span class="menu-copy"><b>开始行动</b><small>ENTER OPERATIONS TOWN</small></span><span class="menu-key">ENTER</span>
-              </button>
-              <button type="button" class="game-menu-item" data-start-action="controls">
-                <span class="menu-selector"></span><span class="menu-index">02</span>
-                <span class="menu-copy"><b>行动手册</b><small>CONTROLS & FIELD GUIDE</small></span><span class="menu-key">F1</span>
-              </button>
-              <button type="button" class="game-menu-item" data-start-action="about">
-                <span class="menu-selector"></span><span class="menu-index">03</span>
-                <span class="menu-copy"><b>系统档案</b><small>MCACS ARCHIVE</small></span><span class="menu-key">F2</span>
-              </button>
-            </nav>
-          </section>
-
-          <aside class="mission-board" aria-label="当前行动简报">
-            <header class="mission-header"><div><span>ACTIVE OPERATION</span><b>当前行动</b></div><em>LIVE</em></header>
-            <section class="mission-name">
-              <div><small>MISSION / OPS-071</small><b>守卫主世界</b></div><span class="mission-emblem">M</span>
-            </section>
-            <div class="tactical-map" aria-hidden="true">
-              <span class="map-axis axis-x"></span><span class="map-axis axis-y"></span>
-              <i class="map-point p1"></i><i class="map-point p2"></i><i class="map-point p3"></i>
-              <div class="map-sweep"></div><small>OVERWATCH GRID / SECTOR 7</small>
-            </div>
-            <section class="threat-level">
-              <div><span>THREAT LEVEL</span><b>威胁等级 · 低</b></div>
-              <div class="threat-bars" aria-label="威胁等级 2/5"><i class="active"></i><i class="active"></i><i></i><i></i><i></i></div>
-            </section>
-            <div class="mission-stats">
-              <div><strong>07</strong><span>检测路线<br><small>ACTIVE</small></span></div>
-              <div><strong>03</strong><span>处置阶段<br><small>TRACKED</small></span></div>
-              <div><strong>24H</strong><span>证据留痕<br><small>READY</small></span></div>
-            </div>
-            <div class="mission-routes"><span>FLY</span><span>SPEED</span><span>X-RAY</span><span>REACH</span></div>
-            <footer class="mission-footer"><i></i><span>所有监控协议已装载</span><b>SECURE</b></footer>
-          </aside>
-        </main>
-
-        <footer class="game-footer">
-          <div class="game-status" role="status" aria-live="polite"><span class="game-status-dot" id="start-status-dot"></span><span id="start-status-text">正在载入监控小镇</span></div>
-          <div class="game-shortcuts"><span><kbd>↑↓</kbd> 选择</span><span><kbd>ENTER</kbd> 确认</span><span><kbd>ESC</kbd> 返回</span></div>
-          <span class="game-copyright">MCACS FIELD OPERATIONS © 2026</span>
-        </footer>
-      </div>
+      <footer class="town-footer">
+        <span><i class="mouse-icon"></i>拖动空白区域可以看看小镇</span>
+        <span>也可以点击建筑入口</span>
+      </footer>
 
       <div class="start-modal-backdrop" id="start-modal-backdrop" hidden>
         <section class="start-modal" role="dialog" aria-modal="true" aria-labelledby="start-modal-title">
-          <div class="modal-stripe"></div>
-          <header><span>MCACS / FIELD DOSSIER</span><b>机密等级 · INTERNAL</b></header>
-          <button class="start-modal-close" type="button" data-start-action="close" aria-label="关闭">ESC</button>
-          <h2 id="start-modal-title"></h2><div id="start-modal-body"></div>
-          <footer><span>ANTI-CHEAT COMMAND SYSTEM</span><b>0.1.1</b></footer>
+          <div class="modal-wood top"></div>
+          <div class="modal-paper">
+            <i class="paper-pin left"></i><i class="paper-pin right"></i>
+            <button class="start-modal-close" type="button" data-start-action="close" aria-label="关闭">×</button>
+            <small class="modal-kicker">MCACS · 小镇手册</small>
+            <h2 id="start-modal-title"></h2><div id="start-modal-body"></div>
+            <footer><span>安全小镇管理处</span><b>v0.1.1</b></footer>
+          </div>
+          <div class="modal-wood bottom"></div>
         </section>
       </div>
     `
 
     document.body.appendChild(this.root)
     document.body.classList.add('start-menu')
-    this.startButton = this.root.querySelector<HTMLButtonElement>('[data-start-action="start"]')!
-    this.menuItems = Array.from(this.root.querySelectorAll<HTMLButtonElement>('.game-menu-item'))
+    this.startButton = this.root.querySelector<HTMLButtonElement>('.town-menu-item.primary')!
+    this.menuItems = Array.from(this.root.querySelectorAll<HTMLButtonElement>('.town-menu-item'))
     this.statusDot = this.root.querySelector<HTMLElement>('#start-status-dot')!
     this.statusText = this.root.querySelector<HTMLElement>('#start-status-text')!
-    this.nodeStatus = this.root.querySelector<HTMLElement>('#game-node-status')!
-    this.clockText = this.root.querySelector<HTMLElement>('#game-clock')!
+    this.clockText = this.root.querySelector<HTMLElement>('#town-clock')!
     this.modal = this.root.querySelector<HTMLElement>('#start-modal-backdrop')!
     this.modalTitle = this.root.querySelector<HTMLElement>('#start-modal-title')!
     this.modalBody = this.root.querySelector<HTMLElement>('#start-modal-body')!
@@ -138,8 +132,8 @@ export class StartScreen {
       const target = event.target as HTMLElement
       const action = target.closest<HTMLElement>('[data-start-action]')?.dataset.startAction
       if (action === 'start') this.start()
-      if (action === 'controls') this.openModal('行动手册', this.controlsMarkup())
-      if (action === 'about') this.openModal('系统档案', this.aboutMarkup())
+      if (action === 'controls') this.openModal('玩法说明', this.controlsMarkup())
+      if (action === 'about') this.openModal('关于安全小镇', this.aboutMarkup())
       if (action === 'close' || target === this.modal) this.closeModal()
     })
     window.addEventListener('keydown', this.handleKeyDown)
@@ -154,22 +148,20 @@ export class StartScreen {
   setConnectionStatus(status: 'connected' | 'connecting' | 'disconnected'): void {
     if (this.leaving) return
     if (status === 'connected') this.setStatus('online')
-    else if (status === 'connecting') this.setStatus('loading', '正在连接控制层')
-    else this.setStatus('offline', '控制层等待连接')
+    else if (status === 'connecting') this.setStatus('loading', '正在连接小镇控制台')
+    else this.setStatus('offline', '控制台暂时离线，可先进入小镇')
   }
 
   private setStatus(status: StartScreenStatus, message?: string): void {
     const labels: Record<StartScreenStatus, string> = {
-      loading: message ?? '正在载入监控小镇', ready: '行动区域已就绪 · 等待接管',
-      online: '控制层在线 · 通讯安全', offline: '控制层等待连接', error: message ?? '小镇资源载入异常',
+      loading: message ?? '小镇正在准备开门',
+      ready: '小镇已经开门，随时可以开始值班',
+      online: '小镇通讯正常',
+      offline: '控制台暂时离线，可先进入小镇',
+      error: message ?? '部分小镇资源暂未载入',
     }
-    const nodeLabels: Record<StartScreenStatus, string> = {
-      loading: 'BOOTING', ready: 'STANDBY', online: 'ONLINE', offline: 'OFFLINE', error: 'DEGRADED',
-    }
-    this.root.dataset.status = status
     this.statusText.textContent = labels[status]
-    this.nodeStatus.textContent = nodeLabels[status]
-    this.statusDot.className = `game-status-dot ${status}`
+    this.statusDot.className = `town-status-dot ${status}`
   }
 
   private updateClock(): void {
@@ -180,8 +172,8 @@ export class StartScreen {
     if (this.leaving) return
     this.leaving = true
     this.startButton.disabled = true
-    this.startButton.querySelector('.menu-copy b')!.textContent = '正在接管行动区域'
-    this.startButton.querySelector('.menu-copy small')!.textContent = 'INITIALIZING FIELD SYSTEMS'
+    this.startButton.querySelector('.menu-copy b')!.textContent = '小镇开门中…'
+    this.startButton.querySelector('.menu-copy small')!.textContent = '正在准备值班台'
     this.root.classList.add('leaving')
     document.body.classList.add('start-menu-leaving')
     if (this.clockTimer) clearInterval(this.clockTimer)
@@ -190,14 +182,14 @@ export class StartScreen {
       this.root.remove()
       window.removeEventListener('keydown', this.handleKeyDown)
       this.onStart()
-    }, 720)
+    }, 620)
   }
 
   private handleKeyDown = (event: KeyboardEvent): void => {
     if (event.key === 'Escape' && this.modalOpen) { event.preventDefault(); this.closeModal(); return }
     if (this.modalOpen) return
-    if (event.key === 'F1') { event.preventDefault(); this.openModal('行动手册', this.controlsMarkup()); return }
-    if (event.key === 'F2') { event.preventDefault(); this.openModal('系统档案', this.aboutMarkup()); return }
+    if (event.key === 'F1') { event.preventDefault(); this.openModal('玩法说明', this.controlsMarkup()); return }
+    if (event.key === 'F2') { event.preventDefault(); this.openModal('关于安全小镇', this.aboutMarkup()); return }
     if (event.key === 'Enter') { event.preventDefault(); this.start(); return }
     if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
     event.preventDefault()
@@ -209,29 +201,33 @@ export class StartScreen {
 
   private openModal(title: string, body: string): void {
     if (this.leaving) return
-    this.modalTitle.textContent = title; this.modalBody.innerHTML = body; this.modal.hidden = false; this.modalOpen = true
+    this.modalTitle.textContent = title
+    this.modalBody.innerHTML = body
+    this.modal.hidden = false
+    this.modalOpen = true
     this.modal.querySelector<HTMLButtonElement>('[data-start-action="close"]')?.focus()
   }
 
   private closeModal(): void { this.modal.hidden = true; this.modalOpen = false }
 
   private controlsMarkup(): string {
-    return `<p class="start-modal-intro">进入行动区域后，使用以下指令观察玩家、案件与证据状态。</p>
+    return `<p class="start-modal-intro">进入小镇后，你可以像观察一座模型镇一样自由查看现场。</p>
       <div class="start-controls-grid">
-        <div><kbd>中键拖拽</kbd><span><b>旋转镜头</b><small>ORBIT CAMERA</small></span></div>
-        <div><kbd>Shift + 中键</kbd><span><b>平移镜头</b><small>PAN CAMERA</small></span></div>
-        <div><kbd>滚轮</kbd><span><b>缩放视角</b><small>ZOOM VIEW</small></span></div>
-        <div><kbd>右键拖拽</kbd><span><b>快速旋转</b><small>QUICK ORBIT</small></span></div>
-        <div><kbd>空格</kbd><span><b>暂停检测</b><small>PAUSE FEED</small></span></div>
-        <div><kbd>M</kbd><span><b>切换音效</b><small>TOGGLE ALERTS</small></span></div>
-      </div><p class="start-modal-note"><i></i> 移动端支持单指旋转与双指缩放。</p>`
+        <div><kbd>中键拖拽</kbd><span><b>转动小镇</b><small>从不同方向观察</small></span></div>
+        <div><kbd>Shift + 中键</kbd><span><b>移动视角</b><small>前往关注区域</small></span></div>
+        <div><kbd>滚轮</kbd><span><b>拉近或远离</b><small>查看建筑细节</small></span></div>
+        <div><kbd>右键拖拽</kbd><span><b>快速转动</b><small>迅速切换方向</small></span></div>
+        <div><kbd>空格</kbd><span><b>暂停巡逻</b><small>临时停下检测</small></span></div>
+        <div><kbd>M</kbd><span><b>告警声音</b><small>打开或关闭提示音</small></span></div>
+      </div><p class="start-modal-note">手机上可以单指转动、双指缩放。</p>`
   }
 
   private aboutMarkup(): string {
-    return `<p class="start-modal-intro">Minecraft Anti-Cheat Command System · 可视化反作弊运营控制台。</p>
+    return `<p class="start-modal-intro">这里是一座由 Three.js 驱动的反作弊运营小镇。玩家、异常、证据和处置都会在镇上留下可追踪的记录。</p>
       <div class="start-about-list">
-        <div><span>行动场景</span><b>THREE.JS 3D 监控小镇</b></div><div><span>证据流程</span><b>采集 → 证据 → 案件 → 复核</b></div>
-        <div><span>执行协议</span><b>ACK / NACK · ACTION ID</b></div><div><span>系统版本</span><b>MCACS BUILD 0.1.1</b></div>
-      </div><p class="start-modal-note"><i></i> 让每一次判断都有证据，让每一次处理都可追踪。</p>`
+        <div><span>监控中心</span><b>实时查看玩家与告警</b></div>
+        <div><span>档案馆</span><b>保存案件与证据时间线</b></div>
+        <div><span>管理处</span><b>复核并执行可靠处置</b></div>
+      </div><p class="start-modal-note">项目版本 MCACS 0.1.1 · Minecraft Anti-Cheat Operations Console</p>`
   }
 }
