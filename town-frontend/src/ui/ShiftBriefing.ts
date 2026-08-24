@@ -215,7 +215,6 @@ export class ShiftBriefing {
         .shift-briefing-actions button:hover { border-color: rgba(45,166,110,.4); }
         .shift-briefing-actions .acknowledge { color: #fff; background: #2da66e; border-color: #2da66e; }
       }
-      @media (max-width: 640px) { #shift-briefing { top: 54px; width: calc(100vw - 20px); } .shift-briefing-header { padding: 16px 17px 13px; } .shift-briefing-body { padding: 12px 14px 15px; } .shift-briefing-status { grid-template-columns: auto 1fr; } .shift-briefing-status time { grid-column: 1 / -1; } .shift-briefing-grid { grid-template-columns: repeat(2, 1fr); } .shift-briefing-grid > div:nth-child(2) { border-right: 0; } .shift-briefing-grid > div:nth-child(-n+2) { border-bottom: 1px solid rgba(255,255,255,.06); } .shift-quality { grid-template-columns: 1fr; gap: 8px; } }
     `
     document.head.appendChild(style)
   }

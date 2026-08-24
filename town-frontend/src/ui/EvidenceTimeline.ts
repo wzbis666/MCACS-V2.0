@@ -330,7 +330,6 @@ export class EvidenceTimeline {
         .evidence-controls button { color: rgba(60,80,140,.6); background: rgba(0,0,0,.03); border-color: rgba(60,80,140,.15); }
         .evidence-state strong { color: #1a1f2e; }
       }
-      @media (max-width: 640px) { #evidence-timeline { left: 10px; bottom: 10px; width: calc(100vw - 20px); max-height: calc(100vh - 20px); overflow-y: auto; } .evidence-path { height: 100px; } .evidence-context, .xray-metrics { grid-template-columns: repeat(2, 1fr); } }
     `
     document.head.appendChild(style)
   }

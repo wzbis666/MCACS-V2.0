@@ -219,7 +219,7 @@ export class StartScreen {
         <div><kbd>右键拖拽</kbd><span><b>快速转动</b><small>迅速切换方向</small></span></div>
         <div><kbd>空格</kbd><span><b>暂停巡逻</b><small>临时停下检测</small></span></div>
         <div><kbd>M</kbd><span><b>告警声音</b><small>打开或关闭提示音</small></span></div>
-      </div><p class="start-modal-note">手机上可以单指转动、双指缩放。</p>`
+      </div><p class="start-modal-note">使用鼠标拖动观察小镇，滚轮可以拉近建筑细节。</p>`
   }
 
   private aboutMarkup(): string {

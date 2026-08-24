@@ -217,6 +217,10 @@ export class MainScene {
     this.npcManager.setCollisionCheck((x: number, z: number) => {
       return this.townBuilder.isInsideBuilding(x, z) !== null
     })
+    // Fountain collision remains active during escorts, unlike building collision.
+    this.npcManager.setHardCollisionCheck((x: number, z: number) => {
+      return this.townBuilder.isInsideFountain(x, z)
+    })
 
     this.vehicleManager.build(this.assetLoader)
 
@@ -1120,7 +1124,7 @@ export class MainScene {
                   this.npcManager.resumeRoaming(effectiveNpcId)
                 }
               }).catch(() => {
-                npc.mesh.position.set(18, 0, 13)
+                npc.mesh.position.set(18, 0, 16)
                 this.npcManager.resumeRoaming(effectiveNpcId)
               })
             })
@@ -1129,7 +1133,7 @@ export class MainScene {
           // NPC 不在任何建筑内，直接恢复到广场（使用非重叠位置）
           npc.setVisible(true)
           npc.restoreVisual()
-          const safePos = this.npcManager.findNonOverlappingPosition(18, 13, effectiveNpcId)
+          const safePos = this.npcManager.findNonOverlappingPosition(18, 16, effectiveNpcId)
           npc.mesh.position.set(safePos.x, 0, safePos.z)
           this.npcManager.resumeRoaming(effectiveNpcId)
         }
@@ -1395,13 +1399,13 @@ export class MainScene {
         }
       }).catch(() => {
         // 押送失败，直接传送到广场并恢复漫游
-        const safePos = this.npcManager.findNonOverlappingPosition(18, 13, npcId)
+        const safePos = this.npcManager.findNonOverlappingPosition(18, 16, npcId)
         npc.mesh.position.set(safePos.x, 0, safePos.z)
         this.npcManager.resumeRoaming(npcId)
       })
     } else {
       // 没有管理员或门标记，直接恢复漫游（使用非重叠位置）
-      const safePos = this.npcManager.findNonOverlappingPosition(18, 13, npcId)
+      const safePos = this.npcManager.findNonOverlappingPosition(18, 16, npcId)
       npc.mesh.position.set(safePos.x, 0, safePos.z)
       this.npcManager.resumeRoaming(npcId)
     }
@@ -1423,7 +1427,7 @@ export class MainScene {
     const doorMarker = this.townBuilder.getDoorMarker(buildingKey)
     const doorPos = doorMarker
       ? { x: doorMarker.position.x, z: doorMarker.position.z }
-      : { x: 18, z: 13 }
+      : { x: 18, z: 16 }
 
     // Town manager escorts NPC to building, then NPC enters
     if (this.townManager) {

@@ -34,10 +34,6 @@ function clamp(v: number, min: number, max: number): number {
  *   MMB drag          → Orbit (rotate around target)
  *   Shift + MMB drag  → Pan (move target)
  *   Wheel             → Zoom (toward cursor)
- *
- * ── Touch ──
- *   1-finger drag     → Orbit
- *   2-finger pinch    → Zoom + Pan
  */
 export class CameraController {
   private perspCamera: THREE.PerspectiveCamera
@@ -105,11 +101,6 @@ export class CameraController {
     domElement.addEventListener('mouseup', this.onMouseUp)
     domElement.addEventListener('wheel', this.onWheel, { passive: false })
     domElement.addEventListener('contextmenu', (e) => e.preventDefault())
-
-    // Touch
-    domElement.addEventListener('touchstart', this.onTouchStart)
-    domElement.addEventListener('touchmove', this.onTouchMove)
-    domElement.addEventListener('touchend', this.onTouchEnd)
   }
 
   // ── Spherical ↔ Cartesian ──
@@ -251,59 +242,6 @@ export class CameraController {
     this.target.y = 0
   }
 
-  // ── Touch Events ──
-
-  private lastTouchDist = 0
-  private lastTouchCenter = new THREE.Vector2()
-  private touchMode: 'none' | 'orbit' | 'pinch' = 'none'
-
-  private onTouchStart = (e: TouchEvent): void => {
-    if (e.touches.length === 1) {
-      this.touchMode = 'orbit'
-      this.lastMouse.set(e.touches[0].clientX, e.touches[0].clientY)
-    } else if (e.touches.length === 2) {
-      this.touchMode = 'pinch'
-      const dx = e.touches[0].clientX - e.touches[1].clientX
-      const dy = e.touches[0].clientY - e.touches[1].clientY
-      this.lastTouchDist = Math.sqrt(dx * dx + dy * dy)
-      this.lastTouchCenter.set(
-        (e.touches[0].clientX + e.touches[1].clientX) / 2,
-        (e.touches[0].clientY + e.touches[1].clientY) / 2,
-      )
-    }
-    this.resetIdle()
-  }
-
-  private onTouchMove = (e: TouchEvent): void => {
-    if (this.touchMode === 'orbit' && e.touches.length === 1) {
-      const dx = e.touches[0].clientX - this.lastMouse.x
-      const dy = e.touches[0].clientY - this.lastMouse.y
-      this.theta -= dx * this.rotateSpeed
-      this.phi = clamp(this.phi + dy * this.rotateSpeed, this.minPhi, this.maxPhi)
-      this.lastMouse.set(e.touches[0].clientX, e.touches[0].clientY)
-    } else if (this.touchMode === 'pinch' && e.touches.length === 2) {
-      const dx = e.touches[0].clientX - e.touches[1].clientX
-      const dy = e.touches[0].clientY - e.touches[1].clientY
-      const dist = Math.sqrt(dx * dx + dy * dy)
-      if (this.lastTouchDist > 0) {
-        const scale = this.lastTouchDist / dist
-        this.radius *= scale
-        this.radius = clamp(this.radius, this.minRadius, this.maxRadius)
-      }
-      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2
-      const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2
-      this.panCamera(cx - this.lastTouchCenter.x, cy - this.lastTouchCenter.y)
-      this.lastTouchCenter.set(cx, cy)
-      this.lastTouchDist = dist
-    }
-    this.resetIdle()
-  }
-
-  private onTouchEnd = (): void => {
-    this.touchMode = 'none'
-    this.lastTouchDist = 0
-  }
-
   // ── Projection Toggle ──
 
   toggleProjection(): void {
@@ -412,8 +350,5 @@ export class CameraController {
     this.domElement.removeEventListener('mousemove', this.onMouseMove)
     this.domElement.removeEventListener('mouseup', this.onMouseUp)
     this.domElement.removeEventListener('wheel', this.onWheel)
-    this.domElement.removeEventListener('touchstart', this.onTouchStart)
-    this.domElement.removeEventListener('touchmove', this.onTouchMove)
-    this.domElement.removeEventListener('touchend', this.onTouchEnd)
   }
 }

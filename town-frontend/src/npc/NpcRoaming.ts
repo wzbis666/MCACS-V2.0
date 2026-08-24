@@ -7,7 +7,7 @@ import type { NPC } from './NPC.js'
 import type { NPCManager } from './NPCManager.js'
 
 const WAYPOINTS = [
-  { x: 18, z: 13 },   // plaza center / fountain
+  { x: 18, z: 16 },   // plaza south, clear of the fountain
   { x: 15, z: 11 },   // plaza side A
   { x: 21, z: 11 },   // plaza side B
   { x: 15, z: 15 },   // plaza side C

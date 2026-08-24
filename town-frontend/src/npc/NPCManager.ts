@@ -11,6 +11,7 @@ export class NPCManager {
   private scene: THREE.Scene
   private labelContainer: HTMLElement
   private collisionCheck: ((x: number, z: number) => boolean) | null = null
+  private hardCollisionCheck: ((x: number, z: number) => boolean) | null = null
   /** 建筑碰撞检查回调（单独保存，用于组合碰撞） */
   private buildingCollisionCheck: ((x: number, z: number) => boolean) | null = null
 
@@ -35,6 +36,18 @@ export class NPCManager {
     }
   }
 
+  /** Set collision for permanent obstacles that escorts must not pass through. */
+  setHardCollisionCheck(check: (x: number, z: number) => boolean): void {
+    this.hardCollisionCheck = check
+    for (const npc of this.npcs.values()) {
+      npc.setHardCollisionCheck(check)
+    }
+  }
+
+  isHardCollision(x: number, z: number): boolean {
+    return this.hardCollisionCheck?.(x, z) ?? false
+  }
+
   /** Check if position (x, z) is too close to any NPC other than the excluded one */
   isTooCloseToOtherNpc(x: number, z: number, excludeNpcId: string | null): boolean {
     for (const [id, npc] of this.npcs) {
@@ -51,7 +64,10 @@ export class NPCManager {
 
   /** Find a nearby position that doesn't overlap with other NPCs */
   findNonOverlappingPosition(x: number, z: number, excludeNpcId: string | null, maxAttempts: number = 8): { x: number; z: number } {
-    if (!this.isTooCloseToOtherNpc(x, z, excludeNpcId)) return { x, z }
+    const overlapsNpc = this.isTooCloseToOtherNpc(x, z, excludeNpcId)
+    const hitsHardObstacle = this.isHardCollision(x, z)
+    const hitsBuilding = this.buildingCollisionCheck?.(x, z) ?? false
+    if (!overlapsNpc && !hitsHardObstacle && !hitsBuilding) return { x, z }
 
     // Try offset positions in a spiral pattern
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -60,6 +76,7 @@ export class NPCManager {
       const testX = x + Math.cos(angle) * offsetDist
       const testZ = z + Math.sin(angle) * offsetDist
       if (!this.isTooCloseToOtherNpc(testX, testZ, excludeNpcId)) {
+        if (this.isHardCollision(testX, testZ)) continue
         // Also check building collision
         if (this.buildingCollisionCheck && this.buildingCollisionCheck(testX, testZ)) continue
         return { x: testX, z: testZ }
@@ -83,6 +100,9 @@ export class NPCManager {
     // Inject collision check if available
     if (this.collisionCheck) {
       npc.setCollisionCheck(this.collisionCheck)
+    }
+    if (this.hardCollisionCheck) {
+      npc.setHardCollisionCheck(this.hardCollisionCheck)
     }
     this.npcs.set(config.id, npc)
 
