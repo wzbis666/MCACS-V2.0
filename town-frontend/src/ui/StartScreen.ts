@@ -31,9 +31,7 @@ export class StartScreen {
       <div class="floating-leaves" aria-hidden="true"><i></i><i></i><i></i></div>
 
       <header class="town-brand">
-        <div class="town-mark" aria-hidden="true">
-          <span class="mark-roof"></span><span class="mark-house"></span><b>M</b>
-        </div>
+        <div class="town-mark" aria-hidden="true"><img src="/favicon.svg" alt="" /></div>
         <div><small>MCACS</small><strong>反作弊安全小镇</strong><span>MINECRAFT ANTI-CHEAT TOWN</span></div>
       </header>
 
