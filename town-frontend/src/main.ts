@@ -4,6 +4,7 @@ import { MainScene } from './game/MainScene.js'
 import type { GameEvent } from './data/GameProtocol.js'
 import { serializeAction, parseMessage } from './data/GameProtocol.js'
 import type { GameAction } from './data/GameProtocol.js'
+import { StartScreen } from './ui/StartScreen.js'
 
 function resolveDefaultWsUrl(): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -37,13 +38,21 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? resolveDefaultApiBase()
 
 class Application {
   private scene: MainScene
+  private startScreen: StartScreen
   private ws: WebSocket | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private reconnectAttempts: number = 0
   private maxReconnectAttempts: number = 50
   private shortcutHideTimer: ReturnType<typeof setTimeout> | null = null
+  private operationsStarted = false
+  private sceneReady = false
+  private connectionRequested = false
 
   constructor() {
+    this.startScreen = new StartScreen({
+      onStart: () => this.enterOperations(),
+    })
+
     const container = document.getElementById('canvas-container')!
     this.scene = new MainScene(container)
     this.scene.setApiBase(API_BASE)
@@ -56,11 +65,24 @@ class Application {
     // Wait for assets to load before connecting WebSocket,
     // so that state sync events can be processed with loaded GLB models.
     this.scene.ready.then(() => {
-      this.connect()
+      this.sceneReady = true
+      this.startScreen.setReady()
+      if (this.connectionRequested) this.connect()
+    }).catch(() => {
+      this.sceneReady = true
+      this.startScreen.setError('小镇资源载入异常，请稍后重试')
+      if (this.connectionRequested) this.connect()
     })
 
     this.scene.start()
+  }
+
+  private enterOperations(): void {
+    if (this.operationsStarted) return
+    this.operationsStarted = true
     this.initShortcutAutoHide()
+    this.connectionRequested = true
+    if (this.sceneReady) this.connect()
   }
 
   private initShortcutAutoHide(): void {
@@ -87,6 +109,7 @@ class Application {
 
   private connect(): void {
     this.scene.setConnectionStatus('connecting')
+    this.startScreen.setConnectionStatus('connecting')
 
     try {
       this.ws = new WebSocket(WS_URL)
@@ -97,6 +120,7 @@ class Application {
 
     this.ws.onopen = () => {
       this.scene.setConnectionStatus('connected')
+      this.startScreen.setConnectionStatus('connected')
       this.reconnectAttempts = 0  // 重置重连计数
     }
 
@@ -125,11 +149,13 @@ class Application {
 
     this.ws.onclose = () => {
       this.scene.setConnectionStatus('disconnected')
+      this.startScreen.setConnectionStatus('disconnected')
       this.scheduleReconnect()
     }
 
     this.ws.onerror = () => {
       this.scene.setConnectionStatus('disconnected')
+      this.startScreen.setConnectionStatus('disconnected')
     }
   }
 
