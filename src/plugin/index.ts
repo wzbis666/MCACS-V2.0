@@ -23,7 +23,6 @@ import { InvestigationCaseManager, type InvestigationCase } from './investigatio
 import { OperationsSummaryManager } from './operations-summary-manager.js'
 import { EvidenceBufferManager, type EvidenceContext } from './evidence-buffer-manager.js'
 import { SoftContainmentManager } from './soft-containment-manager.js'
-import { AdminCommandStore } from './admin-command-store.js'
 import { resolveRuntimeMode } from './runtime-mode.js'
 import { resolveStrategyPreset } from './strategy-presets.js'
 import { mapGrimCheckToCheatType } from './grim-integration.js'
@@ -158,7 +157,6 @@ async function main(): Promise<void> {
   const operationsSummaryManager = new OperationsSummaryManager(DATA_DIR)
   const evidenceBufferManager = new EvidenceBufferManager(DATA_DIR)
   const softContainmentManager = new SoftContainmentManager(DATA_DIR)
-  const adminCommandStore = new AdminCommandStore(DATA_DIR)
   for (const pendingCase of investigationCaseManager.getPendingCases()) {
     evidenceBufferManager.setInvestigating(pendingCase.playerId, true)
   }
@@ -342,11 +340,6 @@ async function main(): Promise<void> {
       // 处罚确认执行后，正式重置 VP
       penaltyEngine.onPenaltyConfirmed(playerId)
     },
-    onStatus: (actionId, status, result) => {
-      if (status === 'delivered') adminCommandStore.markSent(actionId)
-      if (status === 'executed') adminCommandStore.markSucceeded(actionId, result)
-      if (status === 'failed') adminCommandStore.markFailed(actionId, result)
-    },
   })
 
   monitorBridge = new MonitorBridge(
@@ -400,7 +393,6 @@ async function main(): Promise<void> {
     operationsSummaryManager,
     evidenceBufferManager,
     warningTracker,
-    adminCommandStore,
     onInvestigationCaseChanged: (investigationCase) => {
       evidenceBufferManager.setInvestigating(
         investigationCase.playerId,
@@ -437,7 +429,6 @@ async function main(): Promise<void> {
     operationsSummaryManager,
     evidenceBufferManager,
     softContainmentManager,
-    adminCommandStore,
   }
   setRuntime(runtime)
 
@@ -671,9 +662,9 @@ async function main(): Promise<void> {
         // 处理动作执行结果 — 通过 ActionDispatcher 的 ack/nack 机制
         if (event.actionId) {
           if (event.result === 'success') {
-            actionDispatcher.ack(event.actionId, event.message)
+            actionDispatcher.ack(event.actionId)
           } else if (event.result === 'failed') {
-            actionDispatcher.nack(event.actionId, event.message)
+            actionDispatcher.nack(event.actionId)
           }
         }
         console.log(`[Main] Action executed: ${event.action} for ${event.playerId} — ${event.result}`)

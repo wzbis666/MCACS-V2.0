@@ -18,7 +18,6 @@ describe('translateSpigotMessage', () => {
       action: 'ban',
       actionId: 'act-1',
       result: 'success',
-      message: 'Player banned',
     })
   })
 

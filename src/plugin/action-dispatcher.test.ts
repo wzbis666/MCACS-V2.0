@@ -49,29 +49,4 @@ describe('ActionDispatcher', () => {
     expect(onAck).toHaveBeenCalledOnce()
     expect(onAck).toHaveBeenCalledWith('ban-1', 'player-1')
   })
-
-  it('reports delivery and final execution states to persistent command tracking', () => {
-    const onStatus = vi.fn()
-    const dispatcher = new ActionDispatcher(createWsServer(), { onStatus })
-
-    dispatcher.dispatch({ type: 'warning', actionId: 'cmd-1', playerId: 'player-1' })
-    dispatcher.ack('cmd-1', 'Warning sent')
-
-    expect(onStatus.mock.calls).toEqual([
-      ['cmd-1', 'queued'],
-      ['cmd-1', 'delivered'],
-      ['cmd-1', 'executed', 'Warning sent'],
-    ])
-  })
-
-  it('reports failure after the final rejected attempt', () => {
-    const onStatus = vi.fn()
-    const dispatcher = new ActionDispatcher(createWsServer(), { maxAttempts: 1, onStatus })
-
-    dispatcher.dispatch({ type: 'kick', actionId: 'cmd-1', playerId: 'player-1' })
-    dispatcher.nack('cmd-1', 'Player not found')
-
-    expect(dispatcher.getActionAudit()[0].status).toBe('failed')
-    expect(onStatus).toHaveBeenLastCalledWith('cmd-1', 'failed', 'Player not found')
-  })
 })

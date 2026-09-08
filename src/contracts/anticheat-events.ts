@@ -58,7 +58,7 @@ export type AntiCheatEvent =
   | { type: 'grim.violation'; playerId: string; name: string; checkName: string; violationLevel: number; severity: GrimSignalSeverity; threshold: number; timestamp: number }
 
   // Action execution
-  | { type: 'action_executed'; playerId: string; action: ActionType; actionId?: string; result: string; message?: string }
+  | { type: 'action_executed'; playerId: string; action: ActionType; actionId?: string; result: string }
 
   // Ban/Unban execution (from Spigot)
   | { type: 'ban_executed'; playerId: string; name: string; reason: string; duration: string; source: string }
