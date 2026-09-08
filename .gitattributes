@@ -1,0 +1,3 @@
+unity-client/**/*.asset whitespace=-blank-at-eol
+unity-client/**/*.meta whitespace=-blank-at-eol
+unity-client/**/*.unity whitespace=-blank-at-eol

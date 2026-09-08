@@ -52,7 +52,7 @@ namespace Mcacs.UnityMvp
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void EnsureBootstrap()
         {
-            if (FindFirstObjectByType<MvpBootstrap>() != null) return;
+            if (FindAnyObjectByType<MvpBootstrap>() != null) return;
             new GameObject("MCACS-MVP").AddComponent<MvpBootstrap>();
         }
 
@@ -175,7 +175,10 @@ namespace Mcacs.UnityMvp
             item.name = objectName;
             item.transform.position = position;
             item.transform.localScale = scale;
-            item.GetComponent<Renderer>().material.color = color;
+            var shader = Shader.Find("Unlit/Color");
+            var material = new Material(shader);
+            material.color = color;
+            item.GetComponent<Renderer>().material = material;
             return item;
         }
     }
