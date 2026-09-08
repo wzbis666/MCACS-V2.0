@@ -15,6 +15,7 @@ import type { InvestigationCaseManager } from './investigation-case-manager.js'
 import type { OperationsSummaryManager } from './operations-summary-manager.js'
 import type { EvidenceBufferManager } from './evidence-buffer-manager.js'
 import type { SoftContainmentManager } from './soft-containment-manager.js'
+import type { AdminCommandStore } from './admin-command-store.js'
 
 export interface Runtime {
   wsServer: WsServer
@@ -34,6 +35,7 @@ export interface Runtime {
   operationsSummaryManager: OperationsSummaryManager
   evidenceBufferManager: EvidenceBufferManager
   softContainmentManager: SoftContainmentManager
+  adminCommandStore: AdminCommandStore
 }
 
 let runtime: Runtime | null = null

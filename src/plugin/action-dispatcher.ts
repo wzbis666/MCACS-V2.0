@@ -15,7 +15,7 @@ interface QueuedAction {
   penaltyId?: string
 }
 
-export type ActionDeliveryStatus = 'queued' | 'delivered' | 'executed'
+export type ActionDeliveryStatus = 'queued' | 'delivered' | 'executed' | 'failed'
 export interface ActionAuditEntry {
   actionId: string
   action: SpigotAction
@@ -37,12 +37,19 @@ export class ActionDispatcher {
   private retryTimer: ReturnType<typeof setInterval> | null = null
   /** 动作确认回调：用于通知外部系统（如 PenaltyEngine）处罚已确认执行 */
   private onAckCallback: ((actionId: string, playerId: string) => void) | null = null
+  private onStatusCallback: ((actionId: string, status: ActionDeliveryStatus, result?: string) => void) | null = null
 
-  constructor(wsServer: WsServer, opts?: { retryIntervalMs?: number; maxAttempts?: number; onAck?: (actionId: string, playerId: string) => void }) {
+  constructor(wsServer: WsServer, opts?: {
+    retryIntervalMs?: number
+    maxAttempts?: number
+    onAck?: (actionId: string, playerId: string) => void
+    onStatus?: (actionId: string, status: ActionDeliveryStatus, result?: string) => void
+  }) {
     this.wsServer = wsServer
     this.retryIntervalMs = opts?.retryIntervalMs ?? 15_000
     this.maxAttempts = opts?.maxAttempts ?? 3
     this.onAckCallback = opts?.onAck ?? null
+    this.onStatusCallback = opts?.onStatus ?? null
   }
 
   /** 启动重试定时器 */
@@ -71,13 +78,14 @@ export class ActionDispatcher {
         maxAttempts: this.maxAttempts,
         penaltyId,
       })
+      this.onStatusCallback?.(action.actionId, 'queued')
     }
 
     this.doSend(action)
   }
 
   /** 确认动作执行成功 */
-  ack(actionId: string): void {
+  ack(actionId: string, result?: string): void {
     const queued = this.pendingAcks.get(actionId)
     this.pendingAcks.delete(actionId)
     const audit = [...this.actionAudit].reverse().find(entry => entry.actionId === actionId)
@@ -85,6 +93,7 @@ export class ActionDispatcher {
       audit.status = 'executed'
       audit.executedAt = Date.now()
     }
+    this.onStatusCallback?.(actionId, 'executed', result)
     // Only the primary action of an evaluated penalty carries penaltyId.
     // VP updates, warnings, freezes, and supplementary actions must not reset VP.
     if (queued?.penaltyId && this.onAckCallback) {
@@ -93,12 +102,15 @@ export class ActionDispatcher {
   }
 
   /** 标记动作执行失败 */
-  nack(actionId: string): void {
+  nack(actionId: string, result?: string): void {
     const queued = this.pendingAcks.get(actionId)
     if (!queued) return
     if (queued.attempts >= queued.maxAttempts) {
       console.error(`[ActionDispatcher] Action ${actionId} failed after ${queued.maxAttempts} attempts, giving up`)
       this.pendingAcks.delete(actionId)
+      const audit = [...this.actionAudit].reverse().find(entry => entry.actionId === actionId)
+      if (audit) audit.status = 'failed'
+      this.onStatusCallback?.(actionId, 'failed', result)
     }
     // 下次 retryPending() 会重试
   }
@@ -110,6 +122,9 @@ export class ActionDispatcher {
       // 超过 5 分钟的旧动作放弃
       if (now - queued.timestamp > 300_000) {
         this.pendingAcks.delete(actionId)
+        const audit = [...this.actionAudit].reverse().find(entry => entry.actionId === actionId)
+        if (audit) audit.status = 'failed'
+        this.onStatusCallback?.(actionId, 'failed', 'Acknowledgement timed out')
         continue
       }
       if (queued.attempts < queued.maxAttempts) {
@@ -147,6 +162,7 @@ export class ActionDispatcher {
       if (delivered) {
         audit.status = 'delivered'
         audit.deliveredAt = Date.now()
+        if (actionId) this.onStatusCallback?.(actionId, 'delivered')
       } else {
         audit.status = 'queued'
       }

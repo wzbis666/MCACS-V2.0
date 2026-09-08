@@ -12,6 +12,7 @@
     "build:paper": "cd spigot-plugin && mvn clean package -q",
     "build:spigot": "cd spigot-plugin && mvn clean package -q",
     "build:frontend": "cd town-frontend && npx tsc --noEmit",
+    "build:unity": "unity build ./unity-client --target WebGL --editor-version 6000.0.83f1 --execute-method Mcacs.UnityMvp.Editor.BuildWeb --allow-dirty-build",
     "build:all": "tsc && cd spigot-plugin && mvn clean package -q && cd ../town-frontend && npx tsc --noEmit",
     "watch:build": "node watch-build.mjs",
     "test": "vitest run"

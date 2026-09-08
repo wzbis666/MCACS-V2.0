@@ -18,6 +18,12 @@ import type {
 import type { OperationsSummaryManager } from './operations-summary-manager.js'
 import type { EvidenceBufferManager } from './evidence-buffer-manager.js'
 import type { WarningTracker } from './warning-tracker.js'
+import {
+  ADMIN_COMMAND_TYPES,
+  CommandRequestConflictError,
+  type AdminCommandStore,
+  type AdminCommandType,
+} from './admin-command-store.js'
 import type { SpigotAction, RecordsQuery } from '../contracts/index.js'
 
 const PORT = Number(process.env.ACS_HTTP_PORT ?? 55210)
@@ -49,6 +55,7 @@ interface RouteContext {
   operationsSummaryManager?: OperationsSummaryManager
   evidenceBufferManager?: EvidenceBufferManager
   warningTracker?: WarningTracker
+  adminCommandStore?: AdminCommandStore
   onInvestigationCaseChanged?: (investigationCase: InvestigationCase) => void
   /** MonitorBridge 引用，用于 npcId→playerId 解析 */
   resolvePlayerId?: (npcId: string) => string | undefined
@@ -62,11 +69,13 @@ export class EditorServe {
   private app: FastifyInstance | null = null
   private ctx: RouteContext
   private staticDir: string
+  private unityStaticDir: string
   private authSecret: string | null
 
   constructor(ctx: RouteContext, staticDir?: string) {
     this.ctx = ctx
     this.staticDir = staticDir ?? join(process.cwd(), 'public')
+    this.unityStaticDir = join(process.cwd(), 'unity-client', 'Build', 'Web')
     this.authSecret = AUTH_SECRET
   }
 
@@ -131,6 +140,12 @@ export class EditorServe {
       const path = this.getPath(request)
       if (path.startsWith('/api/')) {
         this.json(reply, { error: 'Not found' }, 404)
+        return
+      }
+
+      if (path === '/unity-mvp' || path.startsWith('/unity-mvp/')) {
+        const unityPath = path.slice('/unity-mvp'.length) || '/'
+        this.serveStatic(unityPath, reply, this.unityStaticDir)
         return
       }
 
@@ -332,6 +347,76 @@ export class EditorServe {
 
         const records = this.ctx.recordStore.query(query)
         this.json(reply, records)
+        return
+      }
+
+      if (path === '/api/v1/commands' && request.method === 'GET') {
+        this.json(reply, this.ctx.adminCommandStore?.list() ?? [])
+        return
+      }
+
+      const commandMatch = path.match(/^\/api\/v1\/commands\/([^/]+)$/)
+      if (commandMatch && request.method === 'GET') {
+        const command = this.ctx.adminCommandStore?.get(decodeURIComponent(commandMatch[1]))
+        if (!command) {
+          this.json(reply, { error: 'Command not found' }, 404)
+          return
+        }
+        this.json(reply, command)
+        return
+      }
+
+      if (path === '/api/v1/commands' && request.method === 'POST') {
+        if (!this.ctx.adminCommandStore || !this.ctx.actionDispatcher) {
+          this.json(reply, { error: 'Command service not available' }, 503)
+          return
+        }
+
+        const body = await this.readJsonBody<{
+          requestId?: string
+          serverId?: string
+          type?: string
+          playerId?: string
+          caseId?: string
+          reason?: string
+          duration?: string
+        }>(request)
+        const requestId = body.requestId?.trim()
+        const playerId = body.playerId?.trim()
+        if (!requestId || requestId.length > 128 || !playerId || !this.isAdminCommandType(body.type)) {
+          this.json(reply, { error: 'Invalid requestId, type, or playerId' }, 400)
+          return
+        }
+
+        const resolvedPlayerId = this.ctx.resolvePlayerId?.(playerId) ?? playerId
+        try {
+          const created = this.ctx.adminCommandStore.create({
+            requestId,
+            serverId: body.serverId?.trim() || 'main-server',
+            type: body.type,
+            playerId: resolvedPlayerId,
+            caseId: body.caseId?.trim() || undefined,
+            reason: body.reason?.trim() || undefined,
+            duration: body.duration?.trim() || undefined,
+          })
+          if (created.created) {
+            this.ctx.actionDispatcher.dispatch({
+              type: created.command.type,
+              actionId: created.command.commandId,
+              playerId: created.command.playerId,
+              reason: created.command.reason,
+              duration: created.command.duration,
+            })
+          }
+          const current = this.ctx.adminCommandStore.get(created.command.commandId) ?? created.command
+          this.json(reply, { command: current, duplicate: !created.created }, created.created ? 202 : 200)
+        } catch (err) {
+          if (err instanceof CommandRequestConflictError) {
+            this.json(reply, { error: err.message }, 409)
+            return
+          }
+          throw err
+        }
         return
       }
 
@@ -713,17 +798,17 @@ export class EditorServe {
     })
   }
 
-  private serveStatic(path: string, reply: FastifyReply): void {
-    let filePath = join(this.staticDir, path === '/' ? 'index.html' : path)
+  private serveStatic(path: string, reply: FastifyReply, staticDir: string = this.staticDir): void {
+    let filePath = join(staticDir, path === '/' ? 'index.html' : path)
 
     filePath = normalize(filePath)
-    if (!filePath.startsWith(normalize(this.staticDir))) {
+    if (!filePath.startsWith(normalize(staticDir))) {
       reply.code(403).send('Forbidden')
       return
     }
 
     if (!existsSync(filePath)) {
-      filePath = join(this.staticDir, 'index.html')
+      filePath = join(staticDir, 'index.html')
       if (!existsSync(filePath)) {
         reply.code(404).send('Not found')
         return
@@ -792,5 +877,9 @@ export class EditorServe {
       return JSON.parse(body.toString('utf-8')) as T
     }
     return {} as T
+  }
+
+  private isAdminCommandType(value: string | undefined): value is AdminCommandType {
+    return typeof value === 'string' && (ADMIN_COMMAND_TYPES as readonly string[]).includes(value)
   }
 }

@@ -116,6 +116,7 @@ export function translateSpigotMessage(msg: SpigotMessage): AntiCheatEvent | nul
         action: String(raw.action ?? 'warning') as ActionType,
         actionId: raw.actionId === undefined ? undefined : String(raw.actionId),
         result: raw.result !== undefined ? String(raw.result) : raw.success === true ? 'success' : 'failed',
+        message: raw.message === undefined ? undefined : String(raw.message),
       }
 
     case 'heartbeat':
